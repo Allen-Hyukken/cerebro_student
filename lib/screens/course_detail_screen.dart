@@ -35,6 +35,58 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     }
   }
 
+  // FIX: Build the classroom header banner.
+  //      Load from the API (with JWT header) when hasBanner is true,
+  //      otherwise show the gradient placeholder.
+  Widget _buildBannerRight(double width, double height) {
+    final borderRadius = const BorderRadius.only(
+      topRight: Radius.circular(20),
+      bottomRight: Radius.circular(20),
+    );
+
+    if (widget.classroom.hasBanner) {
+      return ClipRRect(
+        borderRadius: borderRadius,
+        child: Image.network(
+          ApiService.getBannerUrl(widget.classroom.id),
+          width: width,
+          height: height,
+          fit: BoxFit.cover,
+          headers: {
+            if (ApiService.token != null)
+              'Authorization': 'Bearer ${ApiService.token}',
+          },
+          loadingBuilder: (_, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return _bannerPlaceholder(width, height, borderRadius);
+          },
+          errorBuilder: (_, __, ___) =>
+              _bannerPlaceholder(width, height, borderRadius),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: _bannerPlaceholder(width, height, null),
+    );
+  }
+
+  Widget _bannerPlaceholder(double width, double height, BorderRadius? borderRadius) =>
+      Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          borderRadius: borderRadius,
+          gradient: LinearGradient(
+            colors: [AppColors.primary.withOpacity(0.75), AppColors.primaryLight],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: const Icon(Icons.school, color: Colors.white54, size: 60),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -45,7 +97,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             child: Row(children: [
-              IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.textDark), onPressed: () => Navigator.pop(context)),
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: AppColors.textDark),
+                onPressed: () => Navigator.pop(context),
+              ),
               const Spacer(),
               Container(
                 width: 38, height: 38,
@@ -61,11 +116,16 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Container(
               height: 150,
-              decoration: BoxDecoration(color: AppColors.cardBg, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.10), blurRadius: 10, offset: const Offset(0, 4))]),
+              decoration: BoxDecoration(
+                color: AppColors.cardBg,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.10), blurRadius: 10, offset: const Offset(0, 4))],
+              ),
               child: LayoutBuilder(builder: (context, constraints) {
                 final half = constraints.maxWidth / 2;
                 return Row(children: [
-                  SizedBox(width: half,
+                  SizedBox(
+                    width: half,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -80,15 +140,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                       ]),
                     ),
                   ),
-                  ClipRRect(
-                    borderRadius: const BorderRadius.only(topRight: Radius.circular(20), bottomRight: Radius.circular(20)),
-                    child: Image.asset('assets/images/pic2.jpg', width: half, height: 150, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: half, height: 150,
-                          decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.primary.withOpacity(0.75), AppColors.primaryLight], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-                          child: const Icon(Icons.school, color: Colors.white54, size: 60),
-                        )),
-                  ),
+                  // FIX: replaced Image.asset with network banner loader
+                  _buildBannerRight(half, 150),
                 ]);
               }),
             ),
@@ -97,37 +150,40 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           const SizedBox(height: 16),
 
           // Quiz grid
-          Expanded(child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-              : _error != null
-              ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.wifi_off, color: Colors.grey, size: 48),
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.grey)),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: _loadQuizzes, style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white), child: const Text('Retry')),
-          ]))
-              : _quizzes.isEmpty
-              ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.quiz_outlined, color: Colors.grey, size: 64),
-            SizedBox(height: 16),
-            Text('No quizzes yet.', style: TextStyle(color: Colors.grey, fontSize: 16)),
-          ]))
-              : RefreshIndicator(
-            onRefresh: _loadQuizzes,
-            child: GridView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.3),
-              itemCount: _quizzes.length,
-              itemBuilder: (context, index) {
-                final quiz = _quizzes[index];
-                return _QuizCard(
-                  quiz: quiz,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => QuizIntroScreen(quiz: quiz))),
-                );
-              },
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                : _error != null
+                ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Icon(Icons.wifi_off, color: Colors.grey, size: 48),
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: Colors.grey)),
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: _loadQuizzes, style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white), child: const Text('Retry')),
+            ]))
+                : _quizzes.isEmpty
+                ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.quiz_outlined, color: Colors.grey, size: 64),
+              SizedBox(height: 16),
+              Text('No quizzes yet.', style: TextStyle(color: Colors.grey, fontSize: 16)),
+            ]))
+                : RefreshIndicator(
+              onRefresh: _loadQuizzes,
+              child: GridView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.3,
+                ),
+                itemCount: _quizzes.length,
+                itemBuilder: (context, index) {
+                  final quiz = _quizzes[index];
+                  return _QuizCard(
+                    quiz: quiz,
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => QuizIntroScreen(quiz: quiz))),
+                  );
+                },
+              ),
             ),
-          ),
           ),
         ]),
       ),

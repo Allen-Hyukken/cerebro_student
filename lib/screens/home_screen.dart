@@ -145,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)), padding: const EdgeInsets.symmetric(vertical: 14), disabledBackgroundColor: AppColors.primary.withOpacity(0.6)),
                   child: joining
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('Join Class', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      : const Text('Join Class', style: TextStyle(fontWeight: FontWeight.bold)),
                 )),
               ]),
             ]),
@@ -166,38 +166,43 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(children: [
-                IconButton(icon: const Icon(Icons.menu, color: AppColors.textDark), onPressed: () => setState(() => _drawerOpen = true)),
-                IconButton(icon: const Icon(Icons.add, color: AppColors.textDark), onPressed: _showJoinClassDialog, tooltip: 'Join a Class'),
-                const SizedBox(width: 4),
-                Expanded(
+                GestureDetector(
+                  onTap: () => setState(() => _drawerOpen = true),
                   child: Container(
-                    height: 40,
-                    decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20)),
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: _onSearch,
-                      decoration: InputDecoration(
-                        hintText: 'Search',
-                        hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-                        prefixIcon: const Icon(Icons.search, color: Colors.grey, size: 20),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.grey), onPressed: () { _searchController.clear(); _onSearch(''); })
-                            : null,
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                      ),
-                    ),
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.menu, color: AppColors.primary, size: 22),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const Spacer(),
+                Text('My Classes', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+                const Spacer(),
                 Container(
                   width: 38, height: 38,
                   decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.primary, width: 2), color: AppColors.white),
-                  child: ClipOval(child: Image.asset('assets/icons/logo.png', fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.psychology, size: 22, color: AppColors.primary))),
+                  child: ClipOval(child: Image.asset('assets/icons/logo.png', fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.psychology, size: 20, color: AppColors.primary))),
                 ),
               ]),
             ),
-            // Body
+
+            // Search bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                controller: _searchController,
+                onChanged: _onSearch,
+                decoration: InputDecoration(
+                  hintText: 'Search classes...',
+                  prefixIcon: const Icon(Icons.search, color: AppColors.primary),
+                  filled: true, fillColor: AppColors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Classroom list
             Expanded(child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
                 : _error != null
@@ -212,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               const Icon(Icons.school_outlined, color: Colors.grey, size: 64),
               const SizedBox(height: 16),
-              const Text('No classrooms yet.', style: TextStyle(color: Colors.grey, fontSize: 16)),
+              const Text('No classes yet.', style: TextStyle(color: Colors.grey, fontSize: 16)),
               const SizedBox(height: 8),
               const Text('Tap + to join a class', style: TextStyle(color: Colors.grey, fontSize: 13)),
             ]))
@@ -300,6 +305,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+
+          // FAB — join class
+          Positioned(
+            bottom: 24, right: 24,
+            child: FloatingActionButton(
+              onPressed: _showJoinClassDialog,
+              backgroundColor: AppColors.primary,
+              child: const Icon(Icons.add, color: Colors.white),
+            ),
+          ),
         ]),
       ),
     );
@@ -318,6 +333,56 @@ class _ClassroomCard extends StatelessWidget {
   final VoidCallback onTap;
   const _ClassroomCard({required this.classroom, required this.onTap});
 
+  // FIX: Build the right-side banner widget.
+  //      If the classroom has a banner, load it from the API using the JWT
+  //      auth header so the protected endpoint accepts the request.
+  //      Otherwise fall back to the gradient placeholder.
+  Widget _bannerWidget(double width, double height) {
+    if (classroom.hasBanner) {
+      return ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+        child: Image.network(
+          ApiService.getBannerUrl(classroom.id),
+          width: width,
+          height: height,
+          fit: BoxFit.cover,
+          headers: {
+            if (ApiService.token != null)
+              'Authorization': 'Bearer ${ApiService.token}',
+          },
+          loadingBuilder: (_, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return _placeholder(width, height);
+          },
+          errorBuilder: (_, __, ___) => _placeholder(width, height),
+        ),
+      );
+    }
+    return ClipRRect(
+      borderRadius: const BorderRadius.only(
+        topRight: Radius.circular(20),
+        bottomRight: Radius.circular(20),
+      ),
+      child: _placeholder(width, height),
+    );
+  }
+
+  Widget _placeholder(double width, double height) => Container(
+    width: width,
+    height: height,
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [AppColors.primary.withOpacity(0.7), AppColors.primaryLight],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+    ),
+    child: const Icon(Icons.school, color: Colors.white54, size: 50),
+  );
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -325,11 +390,16 @@ class _ClassroomCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         height: 140,
-        decoration: BoxDecoration(color: AppColors.cardBg, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 4))]),
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 4))],
+        ),
         child: LayoutBuilder(builder: (context, constraints) {
           final half = constraints.maxWidth / 2;
           return Row(children: [
-            SizedBox(width: half,
+            SizedBox(
+              width: half,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -344,15 +414,7 @@ class _ClassroomCard extends StatelessWidget {
                 ]),
               ),
             ),
-            ClipRRect(
-              borderRadius: const BorderRadius.only(topRight: Radius.circular(20), bottomRight: Radius.circular(20)),
-              child: Image.asset('assets/images/pic2.jpg', width: half, height: 140, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    width: half, height: 140,
-                    decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.primary.withOpacity(0.7), AppColors.primaryLight], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-                    child: const Icon(Icons.school, color: Colors.white54, size: 50),
-                  )),
-            ),
+            _bannerWidget(half, 140),
           ]);
         }),
       ),

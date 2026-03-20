@@ -24,6 +24,9 @@ class ClassroomModel {
   final String? teacherName;
   final int quizCount;
   final int studentCount;
+  // FIX: parse hasBanner from API response so we know whether to load
+  //      the network banner image or fall back to the gradient placeholder.
+  final bool hasBanner;
 
   ClassroomModel({
     required this.id,
@@ -32,6 +35,7 @@ class ClassroomModel {
     this.teacherName,
     this.quizCount = 0,
     this.studentCount = 0,
+    this.hasBanner = false,
   });
 
   factory ClassroomModel.fromJson(Map<String, dynamic> j) => ClassroomModel(
@@ -41,6 +45,7 @@ class ClassroomModel {
     teacherName: j['teacherName'],
     quizCount: j['quizCount'] ?? 0,
     studentCount: j['studentCount'] ?? 0,
+    hasBanner: j['hasBanner'] ?? false,
   );
 }
 
