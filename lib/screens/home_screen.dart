@@ -12,7 +12,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _searchController = TextEditingController();
   List<ClassroomModel> _allClassrooms = [];
   List<ClassroomModel> _filtered      = [];
@@ -23,7 +23,31 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // watch app lifecycle
     _loadClassrooms();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // Called every time app comes to foreground
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncAndRefresh(); // auto sync when app is opened again
+    }
+  }
+
+  // Sync pending attempts then refresh classrooms
+  Future<void> _syncAndRefresh() async {
+    try {
+      await ApiService.syncPendingAttempts();
+    } catch (_) {}
+    await _loadClassrooms();
   }
 
   Future<void> _loadClassrooms() async {
@@ -33,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final classrooms = data.map((j) => ClassroomModel.fromJson(j)).toList();
       setState(() { _allClassrooms = classrooms; _filtered = classrooms; });
     } catch (e) {
-      setState(() => _error = 'Failed to load classrooms.');
+      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
     } finally {
       setState(() => _isLoading = false);
     }
@@ -49,9 +73,11 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _logout() {
-    ApiService.logout();
-    Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
+  Future<void> _logout() async {
+    await ApiService.logout();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
   }
 
   void _showJoinClassDialog() {
@@ -72,7 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: success
                 ? Column(mainAxisSize: MainAxisSize.min, children: [
               Container(width: 70, height: 70,
-                  decoration: BoxDecoration(color: AppColors.correct.withValues(alpha: 0.12), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: AppColors.correct.withOpacity(0.12), shape: BoxShape.circle),
                   child: const Icon(Icons.check_circle, color: AppColors.correct, size: 44)),
               const SizedBox(height: 20),
               const Text("You've joined the class!", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textDark), textAlign: TextAlign.center),
@@ -89,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Container(width: 42, height: 42,
-                    decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                    decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
                     child: const Icon(Icons.class_outlined, color: AppColors.primary, size: 24)),
                 const SizedBox(width: 14),
                 const Expanded(child: Text('Join a Class', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textDark))),
@@ -102,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: codeController,
                 textCapitalization: TextCapitalization.characters,
                 textAlign: TextAlign.center,
-                maxLength: 7,
+                maxLength: 8,
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 6, color: AppColors.primary),
                 onChanged: (_) { if (errorMsg != null) setDialogState(() => errorMsg = null); },
                 decoration: InputDecoration(
@@ -119,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Row(children: [
                   const Icon(Icons.error_outline, color: AppColors.wrong, size: 16),
                   const SizedBox(width: 6),
-                  Text(errorMsg!, style: const TextStyle(color: AppColors.wrong, fontSize: 12)),
+                  Expanded(child: Text(errorMsg!, style: const TextStyle(color: AppColors.wrong, fontSize: 12))),
                 ]),
               ],
               const SizedBox(height: 20),
@@ -142,10 +168,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       setDialogState(() { joining = false; errorMsg = e.toString().replaceAll('Exception: ', ''); });
                     }
                   },
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)), padding: const EdgeInsets.symmetric(vertical: 14), disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.6)),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)), padding: const EdgeInsets.symmetric(vertical: 14), disabledBackgroundColor: AppColors.primary.withOpacity(0.6)),
                   child: joining
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('Join Class', style: TextStyle(fontWeight: FontWeight.bold)),
+                      : const Text('Join Class', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                 )),
               ]),
             ]),
@@ -166,63 +192,77 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(children: [
-                GestureDetector(
-                  onTap: () => setState(() => _drawerOpen = true),
+                IconButton(icon: const Icon(Icons.menu, color: AppColors.textDark), onPressed: () => setState(() => _drawerOpen = true)),
+                IconButton(icon: const Icon(Icons.add, color: AppColors.textDark), onPressed: _showJoinClassDialog, tooltip: 'Join a Class'),
+                const SizedBox(width: 4),
+                Expanded(
                   child: Container(
-                    width: 40, height: 40,
-                    decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(Icons.menu, color: AppColors.primary, size: 22),
+                    height: 40,
+                    decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20)),
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: _onSearch,
+                      decoration: InputDecoration(
+                        hintText: 'Search',
+                        hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                        prefixIcon: const Icon(Icons.search, color: Colors.grey, size: 20),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.grey), onPressed: () { _searchController.clear(); _onSearch(''); })
+                            : null,
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
                   ),
                 ),
-                const Spacer(),
-                Text('My Classes', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-                const Spacer(),
+                const SizedBox(width: 10),
                 Container(
                   width: 38, height: 38,
                   decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.primary, width: 2), color: AppColors.white),
-                  child: ClipOval(child: Image.asset('assets/icons/logo.png', fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.psychology, size: 20, color: AppColors.primary))),
+                  child: ClipOval(child: Image.asset('assets/icons/logo.png', fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.psychology, size: 22, color: AppColors.primary))),
                 ),
               ]),
             ),
-
-            // Search bar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _onSearch,
-                decoration: InputDecoration(
-                  hintText: 'Search classes...',
-                  prefixIcon: const Icon(Icons.search, color: AppColors.primary),
-                  filled: true, fillColor: AppColors.white,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Classroom list
+            // Body
             Expanded(child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
                 : _error != null
                 ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               const Icon(Icons.wifi_off, color: Colors.grey, size: 48),
               const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(color: Colors.grey)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  _error!.contains('cached')
+                      ? 'You are offline and no data is cached yet.\n\nPlease connect to your server at least once to save data for offline use.'
+                      : _error!,
+                  style: const TextStyle(color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+              ),
               const SizedBox(height: 16),
-              ElevatedButton(onPressed: _loadClassrooms, style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white), child: const Text('Retry')),
+              ElevatedButton(
+                  onPressed: _syncAndRefresh,
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+                  child: const Text('Retry')),
+              const SizedBox(height: 8),
+              Text(
+                'Make sure your server is running\nand you are on the same WiFi.',
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
             ]))
                 : _filtered.isEmpty
                 ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               const Icon(Icons.school_outlined, color: Colors.grey, size: 64),
               const SizedBox(height: 16),
-              const Text('No classes yet.', style: TextStyle(color: Colors.grey, fontSize: 16)),
+              const Text('No classrooms yet.', style: TextStyle(color: Colors.grey, fontSize: 16)),
               const SizedBox(height: 8),
               const Text('Tap + to join a class', style: TextStyle(color: Colors.grey, fontSize: 13)),
             ]))
                 : RefreshIndicator(
-              onRefresh: _loadClassrooms,
+              onRefresh: _syncAndRefresh, // pull to refresh also syncs
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: _filtered.length,
@@ -230,7 +270,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   final c = _filtered[index];
                   return _ClassroomCard(
                     classroom: c,
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CourseDetailScreen(classroom: c))),
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => CourseDetailScreen(classroom: c))),
                   );
                 },
               ),
@@ -251,7 +292,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Container(
                       width: MediaQuery.of(context).size.width * 0.75,
                       height: double.infinity,
-                      decoration: const BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24))),
+                      decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24))),
                       child: SafeArea(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -266,14 +309,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Row(children: [
                             const CircleAvatar(radius: 28, backgroundColor: Colors.white24, child: Icon(Icons.person, color: Colors.white, size: 32)),
                             const SizedBox(width: 14),
-                            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(ApiService.name ?? 'Student', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(ApiService.name ?? 'Student', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16), overflow: TextOverflow.ellipsis),
                               const SizedBox(height: 2),
-                              Text(ApiService.email ?? '', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                            ]),
+                              Text(ApiService.email ?? '', style: const TextStyle(color: Colors.white70, fontSize: 12), overflow: TextOverflow.ellipsis),
+                            ])),
                           ]),
                         ),
                         const Divider(color: Colors.white24, thickness: 1, indent: 20, endIndent: 20),
+                        const SizedBox(height: 8),
                         _drawerItem(Icons.home_outlined, 'Home', () => setState(() => _drawerOpen = false)),
                         _drawerItem(Icons.book_outlined, 'My Classrooms', () => setState(() => _drawerOpen = false)),
                         _drawerItem(Icons.quiz_outlined, 'My Quizzes', () => setState(() => _drawerOpen = false)),
@@ -305,16 +349,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-
-          // FAB — join class
-          Positioned(
-            bottom: 24, right: 24,
-            child: FloatingActionButton(
-              onPressed: _showJoinClassDialog,
-              backgroundColor: AppColors.primary,
-              child: const Icon(Icons.add, color: Colors.white),
-            ),
-          ),
         ]),
       ),
     );
@@ -333,56 +367,6 @@ class _ClassroomCard extends StatelessWidget {
   final VoidCallback onTap;
   const _ClassroomCard({required this.classroom, required this.onTap});
 
-  // FIX: Build the right-side banner widget.
-  //      If the classroom has a banner, load it from the API using the JWT
-  //      auth header so the protected endpoint accepts the request.
-  //      Otherwise fall back to the gradient placeholder.
-  Widget _bannerWidget(double width, double height) {
-    if (classroom.hasBanner) {
-      return ClipRRect(
-        borderRadius: const BorderRadius.only(
-          topRight: Radius.circular(20),
-          bottomRight: Radius.circular(20),
-        ),
-        child: Image.network(
-          ApiService.getBannerUrlSync(classroom.id),
-          width: width,
-          height: height,
-          fit: BoxFit.cover,
-          headers: {
-            if (ApiService.token != null)
-              'Authorization': 'Bearer ${ApiService.token}',
-          },
-          loadingBuilder: (_, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return _placeholder(width, height);
-          },
-          errorBuilder: (_, __, ___) => _placeholder(width, height),
-        ),
-      );
-    }
-    return ClipRRect(
-      borderRadius: const BorderRadius.only(
-        topRight: Radius.circular(20),
-        bottomRight: Radius.circular(20),
-      ),
-      child: _placeholder(width, height),
-    );
-  }
-
-  Widget _placeholder(double width, double height) => Container(
-    width: width,
-    height: height,
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        colors: [AppColors.primary.withValues(alpha: 0.7), AppColors.primaryLight],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-    ),
-    child: const Icon(Icons.school, color: Colors.white54, size: 50),
-  );
-
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -391,33 +375,104 @@ class _ClassroomCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 16),
         height: 140,
         decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, 4))],
-        ),
-        child: LayoutBuilder(builder: (context, constraints) {
-          final half = constraints.maxWidth / 2;
-          return Row(children: [
-            SizedBox(
-              width: half,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Text(classroom.name, style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18), overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 8),
-                  Row(children: [const Icon(Icons.tag, size: 13, color: Colors.grey), const SizedBox(width: 4), Text('Code: ${classroom.code}', style: const TextStyle(color: Colors.grey, fontSize: 13))]),
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    const Icon(Icons.person_outline, size: 13, color: AppColors.primary), const SizedBox(width: 4),
-                    Flexible(child: Text('Teacher: ${classroom.teacherName ?? ''}', style: const TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
+            color: AppColors.cardBg,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 4))]),
+        child: Row(children: [
+          // Left — info
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(classroom.name,
+                        style: const TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18),
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      const Icon(Icons.tag, size: 13, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text('Code: ${classroom.code}',
+                          style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                    ]),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      const Icon(Icons.person_outline, size: 13, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Flexible(child: Text(
+                          'Teacher: ${classroom.teacherName ?? ""}',
+                          style: const TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500),
+                          overflow: TextOverflow.ellipsis)),
+                    ]),
                   ]),
-                ]),
-              ),
             ),
-            _bannerWidget(half, 140),
-          ]);
-        }),
+          ),
+
+          // Right — banner image or gradient
+          ClipRRect(
+            borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(20),
+                bottomRight: Radius.circular(20)),
+            child: SizedBox(
+              width: 160, height: 140,
+              child: classroom.hasBanner && ApiService.token != null
+                  ? Image.network(
+                '${ApiService.getBannerUrlSync(classroom.id)}',
+                width: 160, height: 140,
+                fit: BoxFit.cover,
+                headers: {'Authorization': 'Bearer ${ApiService.token}'},
+                errorBuilder: (_, __, ___) => _buildGradient(),
+                loadingBuilder: (ctx, child, progress) =>
+                progress == null ? child : _buildGradient(),
+              )
+                  : _buildGradient(),
+            ),
+          ),
+        ]),
       ),
+    );
+  }
+
+  Widget _buildGradient() => Container(
+    width: 160, height: 140,
+    decoration: const BoxDecoration(
+        gradient: LinearGradient(
+            colors: [AppColors.primary, AppColors.darkCard],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight)),
+    child: const Icon(Icons.school, color: Colors.white54, size: 50),
+  );
+}
+
+
+// ── Gradient fallback for when no banner is available ────────────────────────
+class _GradientBox extends StatelessWidget {
+  const _GradientBox();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppColors.primary, AppColors.darkCard],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: const Icon(Icons.school, color: Colors.white54, size: 50),
     );
   }
 }

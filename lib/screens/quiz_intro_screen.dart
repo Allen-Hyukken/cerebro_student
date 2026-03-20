@@ -55,12 +55,54 @@ class _QuizIntroScreenState extends State<QuizIntroScreen> with TickerProviderSt
 
   Future<void> _loadQuiz() async {
     try {
+      // Check if already submitted (anti-cheat lock)
+      final alreadySubmitted = await ApiService.hasSubmittedQuiz(widget.quiz.id);
+      if (alreadySubmitted && mounted) {
+        _showAlreadySubmittedDialog();
+        setState(() => _isLoading = false);
+        return;
+      }
       final data = await ApiService.getQuizDetail(widget.quiz.id);
       final questions = (data['questions'] as List).map((q) => QuestionModel.fromJson(q)).toList();
       setState(() { _questions = questions; _isLoading = false; });
     } catch (e) {
       setState(() => _isLoading = false);
     }
+  }
+
+  void _showAlreadySubmittedDialog() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          icon: const Icon(Icons.lock_outline, color: AppColors.primary, size: 48),
+          title: const Text('Already Submitted', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: const Text(
+            'You have already submitted this quiz. Each quiz can only be taken once.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey),
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              ),
+              child: const Text('Go Back'),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   @override

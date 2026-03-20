@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:quiz_app/theme/app_theme.dart';
-import 'package:quiz_app/screens/connection_check_screen.dart';
+import 'package:quiz_app/screens/login_screen.dart';
+import 'package:quiz_app/screens/home_screen.dart';
+import 'package:quiz_app/services/api_service.dart';
 
-void main() {
-  runApp(const QuizApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ApiService.baseUrl;
+  // Restore session from SQLite → skip login if already logged in
+  final loggedIn = await ApiService.restoreSession();
+  runApp(QuizApp(startLoggedIn: loggedIn));
 }
 
 class QuizApp extends StatelessWidget {
-  const QuizApp({super.key});
+  final bool startLoggedIn;
+  const QuizApp({super.key, this.startLoggedIn = false});
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +26,7 @@ class QuizApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Roboto',
       ),
-      home: const ConnectionCheckScreen(),
+      home: startLoggedIn ? const HomeScreen() : const LoginScreen(),
     );
   }
 }

@@ -1,5 +1,5 @@
 // Models matching quizdatabase schema
-// These are used locally; real data comes from ApiService
+// Works with both API (JSON) and SQLite (local cache) responses
 
 class UserModel {
   final int id;
@@ -10,10 +10,10 @@ class UserModel {
   UserModel({required this.id, required this.name, required this.email, required this.role});
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
-    id: j['id'],
-    name: j['name'] ?? '',
+    id:    _parseInt(j['id']),
+    name:  j['name']  ?? '',
     email: j['email'] ?? '',
-    role: j['role'] ?? 'STUDENT',
+    role:  j['role']  ?? 'STUDENT',
   );
 }
 
@@ -24,8 +24,6 @@ class ClassroomModel {
   final String? teacherName;
   final int quizCount;
   final int studentCount;
-  // FIX: parse hasBanner from API response so we know whether to load
-  //      the network banner image or fall back to the gradient placeholder.
   final bool hasBanner;
 
   ClassroomModel({
@@ -39,13 +37,14 @@ class ClassroomModel {
   });
 
   factory ClassroomModel.fromJson(Map<String, dynamic> j) => ClassroomModel(
-    id: j['id'],
-    name: j['name'] ?? '',
-    code: j['code'] ?? '',
-    teacherName: j['teacherName'],
-    quizCount: j['quizCount'] ?? 0,
-    studentCount: j['studentCount'] ?? 0,
-    hasBanner: j['hasBanner'] ?? false,
+    id:           _parseInt(j['id']),
+    name:         j['name']         ?? '',
+    code:         j['code']         ?? '',
+    teacherName:  j['teacherName'],
+    quizCount:    _parseInt(j['quizCount']),
+    studentCount: _parseInt(j['studentCount']),
+    // handles bool (from API) or int 0/1 (from SQLite)
+    hasBanner:    j['hasBanner'] == true || j['hasBanner'] == 1,
   );
 }
 
@@ -73,15 +72,15 @@ class QuizModel {
   });
 
   factory QuizModel.fromJson(Map<String, dynamic> j) => QuizModel(
-    id: j['id'],
-    title: j['title'] ?? '',
-    description: j['description'],
-    classRoomId: j['classRoomId'] ?? 0,
+    id:            _parseInt(j['id']),
+    title:         j['title']         ?? '',
+    description:   j['description'],
+    classRoomId:   _parseInt(j['classRoomId']),
     classRoomName: j['classRoomName'],
-    teacherName: j['teacherName'],
-    questionCount: j['questionCount'] ?? 0,
-    totalPoints: (j['totalPoints'] ?? 0).toDouble(),
-    createdAt: j['createdAt'],
+    teacherName:   j['teacherName'],
+    questionCount: _parseInt(j['questionCount']),
+    totalPoints:   _parseDouble(j['totalPoints']),
+    createdAt:     j['createdAt'],
   );
 }
 
@@ -103,11 +102,11 @@ class QuestionModel {
   });
 
   factory QuestionModel.fromJson(Map<String, dynamic> j) => QuestionModel(
-    id: j['id'],
-    qIndex: j['qIndex'] ?? 0,
-    type: j['type'] ?? 'ESSAY',
-    text: j['text'] ?? '',
-    points: (j['points'] ?? 1.0).toDouble(),
+    id:      _parseInt(j['id']),
+    qIndex:  _parseInt(j['qIndex']),
+    type:    j['type']   ?? 'ESSAY',
+    text:    j['text']   ?? '',
+    points:  _parseDouble(j['points']),
     choices: j['choices'] != null
         ? (j['choices'] as List).map((c) => ChoiceModel.fromJson(c)).toList()
         : [],
@@ -121,7 +120,7 @@ class ChoiceModel {
   ChoiceModel({required this.id, required this.text});
 
   factory ChoiceModel.fromJson(Map<String, dynamic> j) => ChoiceModel(
-    id: j['id'],
+    id:   _parseInt(j['id']),
     text: j['text'] ?? '',
   );
 }
@@ -153,14 +152,29 @@ class AttemptModel {
       totalQuestions > 0 ? answeredCount / totalQuestions * 100 : 0;
 
   factory AttemptModel.fromJson(Map<String, dynamic> j) => AttemptModel(
-    id: j['id'],
-    quizId: j['quizId'],
-    quizTitle: j['quizTitle'] ?? '',
-    score: (j['score'] ?? 0).toDouble(),
-    totalPoints: (j['totalPoints'] ?? 0).toDouble(),
-    totalQuestions: j['totalQuestions'] ?? 0,
-    answeredCount: j['answeredCount'] ?? 0,
-    skippedCount: j['skippedCount'] ?? 0,
-    submittedAt: j['submittedAt'],
+    id:             _parseInt(j['id'] ?? j['attemptId']),
+    quizId:         _parseInt(j['quizId']),
+    quizTitle:      j['quizTitle']      ?? '',
+    score:          _parseDouble(j['score']),
+    totalPoints:    _parseDouble(j['totalPoints']),
+    totalQuestions: _parseInt(j['totalQuestions']),
+    answeredCount:  _parseInt(j['answeredCount']),
+    skippedCount:   _parseInt(j['skippedCount']),
+    submittedAt:    j['submittedAt'],
   );
+}
+
+// ── Type-safe helpers (handle int/double from both SQLite and JSON) ────────────
+int _parseInt(dynamic v) {
+  if (v == null) return 0;
+  if (v is int) return v;
+  if (v is double) return v.toInt();
+  return int.tryParse(v.toString()) ?? 0;
+}
+
+double _parseDouble(dynamic v) {
+  if (v == null) return 0.0;
+  if (v is double) return v;
+  if (v is int) return v.toDouble();
+  return double.tryParse(v.toString()) ?? 0.0;
 }
