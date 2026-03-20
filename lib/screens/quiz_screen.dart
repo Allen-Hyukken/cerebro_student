@@ -233,7 +233,7 @@ class _QuizScreenState extends State<QuizScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _typeColor(currentQuestion.type).withOpacity(0.12),
+                    color: _typeColor(currentQuestion.type).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -245,7 +245,7 @@ class _QuizScreenState extends State<QuizScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.08),
+                    color: AppColors.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -400,7 +400,7 @@ class _QuizScreenState extends State<QuizScreen> {
                     width: 2,
                   ),
                   boxShadow: isSelected
-                      ? [BoxShadow(color: AppColors.primary.withOpacity(0.25), blurRadius: 8, offset: const Offset(0, 4))]
+                      ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 4))]
                       : [],
                 ),
                 child: Row(children: [
@@ -454,7 +454,7 @@ class _QuizScreenState extends State<QuizScreen> {
                       width: 2,
                     ),
                     boxShadow: isSelected
-                        ? [BoxShadow(color: color.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))]
+                        ? [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))]
                         : [],
                   ),
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -629,7 +629,7 @@ class _NavButton extends StatelessWidget {
         width: 40, height: 40,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: enabled ? AppColors.primary.withOpacity(0.12) : Colors.grey.shade100,
+          color: enabled ? AppColors.primary.withValues(alpha: 0.12) : Colors.grey.shade100,
         ),
         child: Icon(icon, size: 18, color: enabled ? AppColors.primary : Colors.grey.shade300),
       ),

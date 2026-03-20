@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:quiz_app/theme/app_theme.dart';
-import 'package:quiz_app/screens/login_screen.dart';
-import 'dart:async';
-import 'package:flutter/widgets.dart';
-import 'package:path/path.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:quiz_app/screens/connection_check_screen.dart';
 
 void main() {
   runApp(const QuizApp());
@@ -23,7 +19,7 @@ class QuizApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Roboto',
       ),
-      home: const LoginScreen(),
+      home: const ConnectionCheckScreen(),
     );
   }
 }

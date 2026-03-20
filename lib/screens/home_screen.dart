@@ -72,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: success
                 ? Column(mainAxisSize: MainAxisSize.min, children: [
               Container(width: 70, height: 70,
-                  decoration: BoxDecoration(color: AppColors.correct.withOpacity(0.12), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: AppColors.correct.withValues(alpha: 0.12), shape: BoxShape.circle),
                   child: const Icon(Icons.check_circle, color: AppColors.correct, size: 44)),
               const SizedBox(height: 20),
               const Text("You've joined the class!", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textDark), textAlign: TextAlign.center),
@@ -89,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Container(width: 42, height: 42,
-                    decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                    decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
                     child: const Icon(Icons.class_outlined, color: AppColors.primary, size: 24)),
                 const SizedBox(width: 14),
                 const Expanded(child: Text('Join a Class', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textDark))),
@@ -142,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       setDialogState(() { joining = false; errorMsg = e.toString().replaceAll('Exception: ', ''); });
                     }
                   },
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)), padding: const EdgeInsets.symmetric(vertical: 14), disabledBackgroundColor: AppColors.primary.withOpacity(0.6)),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)), padding: const EdgeInsets.symmetric(vertical: 14), disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.6)),
                   child: joining
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Text('Join Class', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -170,7 +170,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => setState(() => _drawerOpen = true),
                   child: Container(
                     width: 40, height: 40,
-                    decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                    decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
                     child: const Icon(Icons.menu, color: AppColors.primary, size: 22),
                   ),
                 ),
@@ -345,7 +345,7 @@ class _ClassroomCard extends StatelessWidget {
           bottomRight: Radius.circular(20),
         ),
         child: Image.network(
-          ApiService.getBannerUrl(classroom.id),
+          ApiService.getBannerUrlSync(classroom.id),
           width: width,
           height: height,
           fit: BoxFit.cover,
@@ -375,7 +375,7 @@ class _ClassroomCard extends StatelessWidget {
     height: height,
     decoration: BoxDecoration(
       gradient: LinearGradient(
-        colors: [AppColors.primary.withOpacity(0.7), AppColors.primaryLight],
+        colors: [AppColors.primary.withValues(alpha: 0.7), AppColors.primaryLight],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ),
@@ -393,7 +393,7 @@ class _ClassroomCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.cardBg,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 4))],
+          boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, 4))],
         ),
         child: LayoutBuilder(builder: (context, constraints) {
           final half = constraints.maxWidth / 2;

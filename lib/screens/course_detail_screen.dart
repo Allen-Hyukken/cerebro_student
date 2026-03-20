@@ -48,7 +48,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       return ClipRRect(
         borderRadius: borderRadius,
         child: Image.network(
-          ApiService.getBannerUrl(widget.classroom.id),
+          ApiService.getBannerUrlSync(widget.classroom.id),
           width: width,
           height: height,
           fit: BoxFit.cover,
@@ -79,7 +79,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         decoration: BoxDecoration(
           borderRadius: borderRadius,
           gradient: LinearGradient(
-            colors: [AppColors.primary.withOpacity(0.75), AppColors.primaryLight],
+            colors: [AppColors.primary.withValues(alpha: 0.75), AppColors.primaryLight],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -119,7 +119,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
               decoration: BoxDecoration(
                 color: AppColors.cardBg,
                 borderRadius: BorderRadius.circular(20),
-                boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.10), blurRadius: 10, offset: const Offset(0, 4))],
+                boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.10), blurRadius: 10, offset: const Offset(0, 4))],
               ),
               child: LayoutBuilder(builder: (context, constraints) {
                 final half = constraints.maxWidth / 2;
