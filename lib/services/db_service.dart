@@ -14,17 +14,30 @@ class DbService {
     final path = join(await getDatabasesPath(), 'quizapp.db');
     return openDatabase(
       path,
-      version: 2, // bumped version for new table
+      version: 3, // bumped for per-user submitted_quizzes
       onCreate: (db, version) async {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
-          // Add submitted_quizzes table for existing installs
           await db.execute('''
             CREATE TABLE IF NOT EXISTS submitted_quizzes (
-              quizId INTEGER PRIMARY KEY,
-              submittedAt TEXT
+              quizId INTEGER,
+              userId INTEGER,
+              submittedAt TEXT,
+              PRIMARY KEY (quizId, userId)
+            )
+          ''');
+        }
+        if (oldVersion < 3) {
+          // Recreate with userId support
+          await db.execute('DROP TABLE IF EXISTS submitted_quizzes');
+          await db.execute('''
+            CREATE TABLE submitted_quizzes (
+              quizId INTEGER,
+              userId INTEGER,
+              submittedAt TEXT,
+              PRIMARY KEY (quizId, userId)
             )
           ''');
         }
@@ -106,11 +119,13 @@ class DbService {
       )
     ''');
 
-    // ── NEW: tracks which quizzes have been submitted (one-time lock) ─────────
+    // ── tracks which quizzes have been submitted per user (one-time lock) ──────
     await db.execute('''
       CREATE TABLE submitted_quizzes (
-        quizId INTEGER PRIMARY KEY,
-        submittedAt TEXT
+        quizId INTEGER,
+        userId INTEGER,
+        submittedAt TEXT,
+        PRIMARY KEY (quizId, userId)
       )
     ''');
   }
@@ -226,22 +241,23 @@ class DbService {
 
   // ── Submitted quizzes (one-time lock) ─────────────────────────────────────
 
-  /// Mark a quiz as submitted — prevents re-taking offline
-  static Future<void> markQuizSubmitted(int quizId) async {
+  /// Mark a quiz as submitted for the current user — prevents re-taking
+  static Future<void> markQuizSubmitted(int quizId, int userId) async {
     final database = await db;
     await database.insert('submitted_quizzes', {
       'quizId':      quizId,
+      'userId':      userId,
       'submittedAt': DateTime.now().toIso8601String(),
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  /// Check if a quiz has already been submitted offline
-  static Future<bool> isQuizSubmitted(int quizId) async {
+  /// Check if a quiz has already been submitted by this user
+  static Future<bool> isQuizSubmitted(int quizId, int userId) async {
     final database = await db;
     final rows = await database.query(
       'submitted_quizzes',
-      where: 'quizId = ?',
-      whereArgs: [quizId],
+      where: 'quizId = ? AND userId = ?',
+      whereArgs: [quizId, userId],
     );
     return rows.isNotEmpty;
   }

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:quiz_app/services/db_service.dart';
+import 'package:quiz_app/services/xp_service.dart';
 
 class ApiService {
   static const String _prefKey    = 'server_url';
@@ -54,11 +55,30 @@ class ApiService {
   static Future<bool> restoreSession() async {
     final session = await DbService.getSession();
     if (session == null) return false;
+
+    // Load session into memory first
     _token  = session['token'];
     _userId = session['userId'] as int?;
     _name   = session['name'];
     _email  = session['email'];
     _role   = session['role'];
+
+    // Verify token + check user still exists in MySQL
+    try {
+      final url = '${await baseUrl}/auth/me';
+      final res = await http
+          .get(Uri.parse(url), headers: _headers)
+          .timeout(const Duration(seconds: 4));
+
+      if (res.statusCode == 401 || res.statusCode == 403) {
+        // Account deleted or token invalid — force logout
+        await logout();
+        return false;
+      }
+    } catch (_) {
+      // Offline — trust cached session
+    }
+
     return true;
   }
 
@@ -149,7 +169,8 @@ class ApiService {
     _token = null; _userId = null;
     _name  = null; _email  = null; _role = null;
     await DbService.clearSession();
-    await DbService.clearSubmittedQuizzes();
+    // Do NOT clear submitted_quizzes — locks are per userId
+    // so switching accounts still keeps each user's quiz locks intact
   }
 
   static void _storeSession(Map<String, dynamic> data) {
@@ -216,6 +237,12 @@ class ApiService {
     throw Exception('Classroom not found');
   }
 
+  static Future<List<dynamic>> getQuizLeaderboard(int quizId) async {
+    final res = await _getSilent('/quizzes/$quizId/leaderboard');
+    if (res != null && res.statusCode == 200) return jsonDecode(res.body);
+    throw Exception('Failed to load leaderboard');
+  }
+
   static Future<void> joinClassroom(String code) async {
     final res = await _post('/classrooms/join?code=$code');
     if (res.statusCode != 200) {
@@ -264,12 +291,21 @@ class ApiService {
     if (res != null && res.statusCode == 200) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       await DbService.saveAttempt(data);
-      await DbService.markQuizSubmitted(quizId); // lock online too
+      if (_userId != null) await DbService.markQuizSubmitted(quizId, _userId!);
+      // Award XP based on score
+      if (_userId != null) {
+        final xp = XpService().calculateQuizXp(
+            (data['score'] ?? 0).toDouble(),
+            (data['totalPoints'] ?? 0).toDouble());
+        await XpService().addXp(_userId!, xp);
+      }
       return data;
     }
     // Offline → save pending + lock quiz (one-time only)
     await DbService.savePendingAttempt(quizId, answers);
-    await DbService.markQuizSubmitted(quizId); // prevent re-take offline
+    if (_userId != null) await DbService.markQuizSubmitted(quizId, _userId!);
+    // Award participation XP offline
+    if (_userId != null) await XpService().addXp(_userId!, 10);
     return {
       'attemptId': -1,
       'quizId': quizId,
@@ -284,9 +320,36 @@ class ApiService {
     };
   }
 
-  /// Check if student already submitted this quiz (online or offline)
+  /// Manually mark quiz as submitted in SQLite (for cross-device sync)
+  static Future<void> markSubmittedLocally(int quizId, int userId) async {
+    await DbService.markQuizSubmitted(quizId, userId);
+  }
+
+  /// Check if THIS user already submitted this quiz
+  /// Checks both SQLite (offline lock) and server (online history)
   static Future<bool> hasSubmittedQuiz(int quizId) async {
-    return await DbService.isQuizSubmitted(quizId);
+    if (_userId == null) return false;
+
+    // 1. Check SQLite first (fast, works offline)
+    final localLock = await DbService.isQuizSubmitted(quizId, _userId!);
+    if (localLock) return true;
+
+    // 2. Check server attempts (catches cross-device submissions)
+    try {
+      final res = await _getSilent('/attempts/me');
+      if (res != null && res.statusCode == 200) {
+        final attempts = jsonDecode(res.body) as List<dynamic>;
+        final alreadySubmitted = attempts.any((a) =>
+        (a['quizId'] ?? a['quiz_id']) == quizId);
+        if (alreadySubmitted) {
+          // Cache it locally so we don't need to check server next time
+          await DbService.markQuizSubmitted(quizId, _userId!);
+          return true;
+        }
+      }
+    } catch (_) {}
+
+    return false;
   }
 
   static Future<void> syncPendingAttempts() async {

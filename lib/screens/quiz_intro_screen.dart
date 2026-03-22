@@ -3,6 +3,7 @@ import 'package:quiz_app/theme/app_theme.dart';
 import 'package:quiz_app/models/quiz_model.dart';
 import 'package:quiz_app/services/api_service.dart';
 import 'package:quiz_app/screens/quiz_screen.dart';
+import 'package:quiz_app/screens/leaderboard_screen.dart';
 
 class QuizIntroScreen extends StatefulWidget {
   final QuizModel quiz;
@@ -23,8 +24,9 @@ class _QuizIntroScreenState extends State<QuizIntroScreen> with TickerProviderSt
   late Animation<double> _scaleAnim;
   late Animation<double> _pulseAnim;
 
-  bool _isStarting = false;
-  int _countdown   = 3;
+  bool _isStarting       = false;
+  int  _countdown         = 3;
+  bool _alreadySubmitted = false;
 
   List<QuestionModel> _questions = [];
   bool _isLoading = true;
@@ -55,54 +57,39 @@ class _QuizIntroScreenState extends State<QuizIntroScreen> with TickerProviderSt
 
   Future<void> _loadQuiz() async {
     try {
-      // Check if already submitted (anti-cheat lock)
-      final alreadySubmitted = await ApiService.hasSubmittedQuiz(widget.quiz.id);
-      if (alreadySubmitted && mounted) {
-        _showAlreadySubmittedDialog();
-        setState(() => _isLoading = false);
-        return;
+      // Check SQLite first (fast)
+      bool alreadySubmitted = await ApiService.hasSubmittedQuiz(widget.quiz.id);
+
+      // Also check server attempts in case student submitted on another device
+      if (!alreadySubmitted) {
+        try {
+          final attempts = await ApiService.getMyAttempts();
+          alreadySubmitted = attempts.any((a) {
+            final id = a['quizId'] ?? a['quiz_id'];
+            return id != null && id.toString() == widget.quiz.id.toString();
+          });
+          // Cache it locally if found on server
+          if (alreadySubmitted && ApiService.userId != null) {
+            await ApiService.markSubmittedLocally(widget.quiz.id, ApiService.userId!);
+          }
+        } catch (_) {}
       }
+
+      if (mounted) {
+        setState(() { _alreadySubmitted = alreadySubmitted; });
+      }
+
+      // Load questions regardless (needed for display)
       final data = await ApiService.getQuizDetail(widget.quiz.id);
       final questions = (data['questions'] as List).map((q) => QuestionModel.fromJson(q)).toList();
-      setState(() { _questions = questions; _isLoading = false; });
+      if (mounted) setState(() { _questions = questions; _isLoading = false; });
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _showAlreadySubmittedDialog() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          icon: const Icon(Icons.lock_outline, color: AppColors.primary, size: 48),
-          title: const Text('Already Submitted', style: TextStyle(fontWeight: FontWeight.bold)),
-          content: const Text(
-            'You have already submitted this quiz. Each quiz can only be taken once.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey),
-          ),
-          actionsAlignment: MainAxisAlignment.center,
-          actions: [
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-              ),
-              child: const Text('Go Back'),
-            ),
-          ],
-        ),
-      );
-    });
+    // No dialog — button shows state instead
   }
 
   @override
@@ -151,7 +138,7 @@ class _QuizIntroScreenState extends State<QuizIntroScreen> with TickerProviderSt
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: TC.bg(context),
       body: SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
@@ -171,8 +158,15 @@ class _QuizIntroScreenState extends State<QuizIntroScreen> with TickerProviderSt
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(children: [
-        Align(alignment: Alignment.centerLeft,
-            child: IconButton(icon: const Icon(Icons.arrow_back_ios, color: AppColors.textDark), onPressed: () => Navigator.pop(context))),
+        Row(children: [
+          IconButton(icon: Icon(Icons.arrow_back_ios, color: TC.text(context)), onPressed: () => Navigator.pop(context)),
+          const Spacer(),
+          IconButton(
+              icon: const Icon(Icons.leaderboard, color: AppColors.primary),
+              tooltip: 'Leaderboard',
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => LeaderboardScreen(quiz: widget.quiz)))),
+        ]),
         const SizedBox(height: 20),
         // Banner
         Container(
@@ -180,17 +174,17 @@ class _QuizIntroScreenState extends State<QuizIntroScreen> with TickerProviderSt
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
             gradient: const LinearGradient(colors: [AppColors.primary, AppColors.darkCard], begin: Alignment.topLeft, end: Alignment.bottomRight),
-            boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.35), blurRadius: 20, offset: const Offset(0, 8))],
+            boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.35), blurRadius: 20, offset: const Offset(0, 8))],
           ),
           child: Stack(children: [
-            Positioned(top: -30, right: -20, child: Container(width: 120, height: 120, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.07)))),
-            Positioned(bottom: -40, left: -10, child: Container(width: 140, height: 140, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.05)))),
+            Positioned(top: -30, right: -20, child: Container(width: 120, height: 120, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.07)))),
+            Positioned(bottom: -40, left: -10, child: Container(width: 140, height: 140, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.05)))),
             Padding(
               padding: const EdgeInsets.all(24),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
                   child: Text(widget.quiz.classRoomName ?? '', style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1)),
                 ),
                 const SizedBox(height: 8),
@@ -215,9 +209,9 @@ class _QuizIntroScreenState extends State<QuizIntroScreen> with TickerProviderSt
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]),
+          decoration: BoxDecoration(color: TC.surface(context), borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: TC.isDark(context) ? 0.0 : 0.04), blurRadius: 10, offset: const Offset(0, 4))]),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Instructions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textDark)),
+            Text('Instructions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: TC.text(context))),
             const SizedBox(height: 14),
             _InstructionRow(icon: Icons.skip_next_outlined, text: 'Skip and return to any question using the arrows.'),
             const SizedBox(height: 10),
@@ -229,9 +223,34 @@ class _QuizIntroScreenState extends State<QuizIntroScreen> with TickerProviderSt
           ]),
         ),
         const Spacer(),
-        // Start button
+        // Start button — changes based on submission status
         _isLoading
-            ? const CircularProgressIndicator(color: AppColors.primary)
+            ? Column(children: [
+          const CircularProgressIndicator(color: AppColors.primary),
+          const SizedBox(height: 8),
+          Text('Checking status...', style: TextStyle(fontSize: 12, color: TC.subText(context))),
+        ])
+            : _alreadySubmitted
+        // ── Already taken ──────────────────────────────────────────
+            ? Container(
+            width: double.infinity, height: 58,
+            decoration: BoxDecoration(
+                gradient: LinearGradient(
+                    colors: TC.isDark(context)
+                        ? [Colors.grey.shade700, Colors.grey.shade800]
+                        : [Colors.grey.shade400, Colors.grey.shade500],
+                    begin: Alignment.centerLeft, end: Alignment.centerRight),
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [BoxShadow(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    blurRadius: 8, offset: const Offset(0, 4))]),
+            child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.check_circle_outline, color: Colors.white, size: 24),
+              SizedBox(width: 10),
+              Text('Already Taken', style: TextStyle(
+                  color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            ]))
+        // ── Start quiz ─────────────────────────────────────────────
             : AnimatedBuilder(
           animation: _pulseAnim,
           builder: (_, child) => Transform.scale(scale: _pulseAnim.value, child: child),
@@ -240,11 +259,11 @@ class _QuizIntroScreenState extends State<QuizIntroScreen> with TickerProviderSt
             child: Container(
               width: double.infinity, height: 58,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [AppColors.primary, AppColors.darkCard], begin: Alignment.centerLeft, end: Alignment.centerRight),
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 6))],
-              ),
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: const [
+                  gradient: const LinearGradient(colors: [AppColors.primary, AppColors.darkCard],
+                      begin: Alignment.centerLeft, end: Alignment.centerRight),
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.4), blurRadius: 16, offset: const Offset(0, 6))]),
+              child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Icon(Icons.play_arrow_rounded, color: Colors.white, size: 26),
                 SizedBox(width: 8),
                 Text('Start Quiz', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
@@ -258,33 +277,35 @@ class _QuizIntroScreenState extends State<QuizIntroScreen> with TickerProviderSt
   }
 
   Widget _buildCountdown() {
-    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(_countdown == 0 ? 'Get Ready!' : 'Starting in...', style: TextStyle(fontSize: 18, color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
-      const SizedBox(height: 32),
-      AnimatedBuilder(
-        animation: _countdownController,
-        builder: (_, __) {
-          final scale   = Tween<double>(begin: 1.3, end: 0.8).evaluate(CurvedAnimation(parent: _countdownController, curve: Curves.easeInOut));
-          final opacity = Tween<double>(begin: 1.0, end: 0.0).evaluate(CurvedAnimation(parent: _countdownController, curve: Curves.easeIn));
-          return Opacity(
-            opacity: _countdownController.isAnimating ? opacity : 1.0,
-            child: Transform.scale(
-              scale: _countdownController.isAnimating ? scale : 1.0,
-              child: Container(
-                width: 160, height: 160,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: _countdownColor.withOpacity(0.12), border: Border.all(color: _countdownColor, width: 4)),
-                child: Center(child: Text(_countdown == 0 ? 'GO!' : '$_countdown',
-                    style: TextStyle(fontSize: _countdown == 0 ? 42 : 64, fontWeight: FontWeight.bold, color: _countdownColor))),
-              ),
-            ),
-          );
-        },
-      ),
-      const SizedBox(height: 40),
-      Text(widget.quiz.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-      const SizedBox(height: 8),
-      Text('${widget.quiz.questionCount} questions', style: const TextStyle(fontSize: 14, color: Colors.grey)),
-    ]));
+    return Container(
+        color: TC.bg(context),
+        child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text(_countdown == 0 ? 'Get Ready!' : 'Starting in...', style: TextStyle(fontSize: 18, color: TC.subText(context), fontWeight: FontWeight.w500)),
+          const SizedBox(height: 32),
+          AnimatedBuilder(
+            animation: _countdownController,
+            builder: (_, __) {
+              final scale   = Tween<double>(begin: 1.3, end: 0.8).evaluate(CurvedAnimation(parent: _countdownController, curve: Curves.easeInOut));
+              final opacity = Tween<double>(begin: 1.0, end: 0.0).evaluate(CurvedAnimation(parent: _countdownController, curve: Curves.easeIn));
+              return Opacity(
+                opacity: _countdownController.isAnimating ? opacity : 1.0,
+                child: Transform.scale(
+                  scale: _countdownController.isAnimating ? scale : 1.0,
+                  child: Container(
+                    width: 160, height: 160,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: _countdownColor.withValues(alpha: 0.12), border: Border.all(color: _countdownColor, width: 4)),
+                    child: Center(child: Text(_countdown == 0 ? 'GO!' : '$_countdown',
+                        style: TextStyle(fontSize: _countdown == 0 ? 42 : 64, fontWeight: FontWeight.bold, color: _countdownColor))),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 40),
+          Text(widget.quiz.title, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: TC.text(context))),
+          const SizedBox(height: 8),
+          Text('${widget.quiz.questionCount} questions', style: TextStyle(fontSize: 14, color: TC.subText(context))),
+        ])));
   }
 }
 
@@ -297,7 +318,7 @@ class _StatChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(child: Container(
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-      decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.10), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: TC.isDark(context) ? 0.2 : 0.10), borderRadius: BorderRadius.circular(12)),
       child: Column(children: [
         Icon(icon, color: AppColors.primary, size: 20),
         const SizedBox(height: 4),
@@ -316,10 +337,10 @@ class _InstructionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Container(width: 30, height: 30,
-          decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.10), borderRadius: BorderRadius.circular(8)),
+          decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: TC.isDark(context) ? 0.2 : 0.10), borderRadius: BorderRadius.circular(8)),
           child: Icon(icon, color: AppColors.primary, size: 16)),
       const SizedBox(width: 12),
-      Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: Colors.grey, height: 1.4))),
+      Expanded(child: Text(text, style: TextStyle(fontSize: 13, color: TC.subText(context), height: 1.4))),
     ]);
   }
 }
