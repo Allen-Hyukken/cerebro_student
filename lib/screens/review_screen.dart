@@ -144,6 +144,35 @@ class _AnswerCard extends StatefulWidget {
 class _AnswerCardState extends State<_AnswerCard> {
   bool _expanded = false;
 
+  /// Get human-readable answer text
+  /// For MCQ: looks up choice text by choiceId
+  /// For others: returns givenText directly
+  String _getAnswerDisplay(dynamic answer) {
+    final givenText = answer['givenText'] as String?;
+    final choiceId  = answer['choiceId'];
+
+    // If choiceId exists, try to find the choice text from question choices
+    if (choiceId != null) {
+      // The answer object may have choices embedded or we fall back to givenText
+      final choices = answer['choices'] as List?;
+      if (choices != null) {
+        for (final c in choices) {
+          if (c['id'].toString() == choiceId.toString()) {
+            return c['text'] as String? ?? givenText ?? choiceId.toString();
+          }
+        }
+      }
+      // If givenText looks like a number (the choiceId), show it as-is
+      // but if server returned the text in givenText, use that
+      if (givenText != null && givenText != choiceId.toString()) {
+        return givenText;
+      }
+      return 'Choice ID: $choiceId';
+    }
+
+    return givenText ?? '(no answer)';
+  }
+
   @override
   Widget build(BuildContext context) {
     final answer     = widget.answer;
@@ -247,7 +276,7 @@ class _AnswerCardState extends State<_AnswerCard> {
                                 ? AppColors.correct.withValues(alpha: 0.3)
                                 : AppColors.wrong.withValues(alpha: 0.3))),
                     child: Text(
-                        givenText ?? '(no text answer)',
+                        _getAnswerDisplay(answer),
                         style: TextStyle(
                             fontSize: 14,
                             color: isCorrect ? AppColors.correct : AppColors.wrong,

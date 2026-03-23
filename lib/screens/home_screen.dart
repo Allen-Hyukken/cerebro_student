@@ -3,11 +3,12 @@ import 'package:quiz_app/theme/app_theme.dart';
 import 'package:quiz_app/models/quiz_model.dart';
 import 'package:quiz_app/services/api_service.dart';
 import 'package:quiz_app/services/theme_service.dart';
+import 'package:quiz_app/services/sound_service.dart';
 import 'package:quiz_app/screens/course_detail_screen.dart';
 import 'package:quiz_app/screens/login_screen.dart';
 import 'package:quiz_app/screens/history_screen.dart';
+import 'package:quiz_app/widgets/user_avatar.dart';
 import 'package:quiz_app/screens/memory_game_screen.dart';
-import 'package:quiz_app/screens/leaderboard_screen.dart';
 import 'package:quiz_app/screens/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -201,8 +202,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(width: 4),
                 Expanded(
                   child: Container(
-                    height: 40,
-                    decoration: BoxDecoration(color: TC.surface(context), borderRadius: BorderRadius.circular(20)),
+                    height: 44,
+                    decoration: BoxDecoration(
+                        color: TC.surface(context),
+                        borderRadius: BorderRadius.circular(30),
+                        boxShadow: [BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 6, offset: const Offset(0, 2))]),
                     child: TextField(
                       controller: _searchController,
                       onChanged: _onSearch,
@@ -306,7 +312,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           child: Row(children: [
-                            const CircleAvatar(radius: 28, backgroundColor: Colors.white24, child: Icon(Icons.person, color: Colors.white, size: 32)),
+                            const UserAvatar(size: 56, borderColor: Colors.white),
                             const SizedBox(width: 14),
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               Text(ApiService.name ?? 'Student', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16), overflow: TextOverflow.ellipsis),
@@ -365,6 +371,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 value: ThemeService().isDark,
                                 onChanged: (val) async {
                                   await ThemeService().setDark(val);
+                                  setSw(() {});
+                                },
+                                activeColor: Colors.white,
+                                activeTrackColor: AppColors.darkCard,
+                                inactiveThumbColor: Colors.white70,
+                                inactiveTrackColor: Colors.white24,
+                              )),
+                            ]),
+                          ),
+
+                          // ── Background music toggle ──────────────────────
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            child: Row(children: [
+                              const Icon(Icons.music_note, color: Colors.white70, size: 22),
+                              const SizedBox(width: 16),
+                              const Expanded(child: Text('Music', style: TextStyle(color: Colors.white, fontSize: 15))),
+                              StatefulBuilder(builder: (ctx, setSw) => Switch(
+                                value: SoundService().isBgEnabled,
+                                onChanged: (val) async {
+                                  await SoundService().toggleBackground();
                                   setSw(() {});
                                 },
                                 activeColor: Colors.white,

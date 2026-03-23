@@ -8,6 +8,7 @@ import 'package:quiz_app/screens/review_screen.dart';
 import 'package:quiz_app/services/api_service.dart';
 import 'package:quiz_app/services/xp_service.dart';
 import 'package:quiz_app/widgets/xp_popup.dart';
+import 'package:quiz_app/services/sound_service.dart';
 
 class ResultScreen extends StatefulWidget {
   final QuizModel quiz;
@@ -40,6 +41,9 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
 
     Future.delayed(const Duration(milliseconds: 300), () { if (mounted) _cardAnimController.forward(); });
     Future.delayed(const Duration(milliseconds: 600), () { if (mounted) _scoreAnimController.forward(); });
+    // Play finish sound
+    SoundService().stopBackground();
+    if (widget.attemptData['offline'] != true) SoundService().playFinish();
 
     final isOffline   = widget.attemptData['offline'] == true;
     final score       = (widget.attemptData['score']       ?? 0).toDouble();
@@ -54,7 +58,7 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
     }
 
     // Show XP popup after 1.5s
-    if (!isOffline) {
+    if (isOffline != true) {
       Future.delayed(const Duration(milliseconds: 1500), () async {
         if (!mounted) return;
         final uid       = ApiService.userId ?? 0;
@@ -80,7 +84,7 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    final bool isOffline     = widget.attemptData['offline'] == true;
+    final bool isOffline = widget.attemptData['offline'] == true;
     final int totalQuestions = widget.attemptData['totalQuestions'] ?? 0;
     final int answeredCount  = widget.attemptData['answeredCount']  ?? 0;
     final int skippedCount   = widget.attemptData['skippedCount']   ?? 0;
@@ -287,7 +291,7 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
                   const SizedBox(height: 28),
 
                   // Review button
-                  if (!isOffline) ...[
+                  if (isOffline != true) ...[
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(

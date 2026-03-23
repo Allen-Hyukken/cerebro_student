@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:quiz_app/theme/app_theme.dart';
 import 'package:quiz_app/models/quiz_model.dart';
 import 'package:quiz_app/services/api_service.dart';
+import 'package:quiz_app/widgets/user_avatar.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   final QuizModel quiz;
@@ -220,18 +221,11 @@ class _PodiumSlot extends StatelessWidget {
   Widget build(BuildContext context) {
     final isMe  = entry['userId'] == ApiService.userId;
     final score = (entry['score'] ?? 0).toDouble();
+    final uid   = (entry['userId'] ?? 0) as int;
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Text(medal, style: const TextStyle(fontSize: 24)),
       const SizedBox(height: 6),
-      Container(
-          width: 48, height: 48,
-          decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color,
-              border: isMe ? Border.all(color: AppColors.primary, width: 3) : null,
-              boxShadow: [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 8)]),
-          child: Center(child: Text(_initials,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)))),
+      PlayerAvatar(userId: uid, name: entry['name'] ?? '', size: 48),
       const SizedBox(height: 6),
       Text(entry['name'] as String? ?? '',
           style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
@@ -320,14 +314,7 @@ class _LeaderboardRow extends StatelessWidget {
         const SizedBox(width: 12),
 
         // Avatar
-        Container(
-            width: 42, height: 42,
-            decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _avatarColor,
-                boxShadow: [BoxShadow(color: _avatarColor.withValues(alpha: 0.3), blurRadius: 6)]),
-            child: Center(child: Text(_initials,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)))),
+        PlayerAvatar(userId: (entry['userId'] ?? 0) as int, name: entry['name'] ?? '', size: 42),
         const SizedBox(width: 12),
 
         // Name + bar

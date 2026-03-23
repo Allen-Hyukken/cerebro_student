@@ -15,13 +15,20 @@ dependencies:
   path: ^1.9.0
   path_provider: ^2.1.2
   shared_preferences: ^2.2.3
-  confetti: ^0.7.0          # confetti animation
-  audioplayers: ^6.0.0      # sound effects
+  confetti: ^0.7.0
+  audioplayers: ^6.0.0
+  flutter_native_splash: ^2.4.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+
+flutter_native_splash:
+  color: "#D0D3EE"
+  image: assets/icons/splash.png
+  android: true
+  ios: true
 
 flutter:
   uses-material-design: true
@@ -29,3 +36,4 @@ flutter:
     - assets/icons/logo.png
     - assets/icons/card.png
     - assets/sounds/
+    - assets/icons/splash.png
