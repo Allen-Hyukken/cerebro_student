@@ -3,7 +3,16 @@ import 'package:quiz_app/theme/app_theme.dart';
 
 class ReviewScreen extends StatefulWidget {
   final Map<String, dynamic> attemptData;
-  const ReviewScreen({super.key, required this.attemptData});
+  /// When false, correct/wrong status and color-coding are hidden from the student.
+  /// ResultScreen only navigates here when showAnswers == true, but this flag
+  /// is kept as a safety guard.
+  final bool showAnswers;
+
+  const ReviewScreen({
+    super.key,
+    required this.attemptData,
+    this.showAnswers = true,
+  });
 
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
@@ -18,23 +27,22 @@ class _ReviewScreenState extends State<ReviewScreen> {
     switch (_filter) {
       case 'wrong':
         return _answers.where((a) =>
-        (a['givenText'] != null || a['choiceId'] != null) && a['correct'] == false
-        ).toList();
+        (a['givenText'] != null || a['choiceId'] != null) &&
+            a['correct'] == false).toList();
       case 'correct':
         return _answers.where((a) => a['correct'] == true).toList();
       case 'skipped':
         return _answers.where((a) =>
-        a['givenText'] == null && a['choiceId'] == null
-        ).toList();
+        a['givenText'] == null && a['choiceId'] == null).toList();
       default:
         return _answers;
     }
   }
 
-  int get _correctCount  => _answers.where((a) => a['correct'] == true).length;
-  int get _wrongCount    => _answers.where((a) =>
+  int get _correctCount => _answers.where((a) => a['correct'] == true).length;
+  int get _wrongCount   => _answers.where((a) =>
   (a['givenText'] != null || a['choiceId'] != null) && a['correct'] == false).length;
-  int get _skippedCount  => _answers.where((a) =>
+  int get _skippedCount => _answers.where((a) =>
   a['givenText'] == null && a['choiceId'] == null).length;
 
   @override
@@ -59,7 +67,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ]),
           ),
 
-          // ── Quiz title ─────────────────────────────────────────────────
+          // ── Quiz title + summary ───────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Container(
@@ -74,28 +82,41 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 Text(quizTitle,
                     style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                Row(children: [
-                  _MiniBadge(label: '✅ $_correctCount Correct',  color: AppColors.correct),
-                  const SizedBox(width: 8),
-                  _MiniBadge(label: '❌ $_wrongCount Wrong',      color: AppColors.wrong),
-                  const SizedBox(width: 8),
-                  _MiniBadge(label: '⏭ $_skippedCount Skipped',  color: Colors.orange),
-                ]),
+                if (widget.showAnswers)
+                  Row(children: [
+                    _MiniBadge(label: '✅ $_correctCount Correct',  color: AppColors.correct),
+                    const SizedBox(width: 8),
+                    _MiniBadge(label: '❌ $_wrongCount Wrong',      color: AppColors.wrong),
+                    const SizedBox(width: 8),
+                    _MiniBadge(label: '⏭ $_skippedCount Skipped',  color: Colors.orange),
+                  ])
+                else
+                  Row(children: [
+                    _MiniBadge(label: '${_answers.length} Questions', color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    _MiniBadge(label: '⏭ $_skippedCount Skipped', color: Colors.orange),
+                  ]),
               ]),
             ),
           ),
 
           const SizedBox(height: 12),
 
-          // ── Filter tabs ────────────────────────────────────────────────
+          // ── Filter tabs (only show correct/wrong tabs when showAnswers) ──
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(children: [
+            child: widget.showAnswers
+                ? Row(children: [
               _FilterTab(label: 'All',     value: 'all',     selected: _filter, onTap: (v) => setState(() => _filter = v), count: _answers.length),
               const SizedBox(width: 8),
               _FilterTab(label: 'Wrong',   value: 'wrong',   selected: _filter, onTap: (v) => setState(() => _filter = v), count: _wrongCount,   color: AppColors.wrong),
               const SizedBox(width: 8),
               _FilterTab(label: 'Correct', value: 'correct', selected: _filter, onTap: (v) => setState(() => _filter = v), count: _correctCount, color: AppColors.correct),
+              const SizedBox(width: 8),
+              _FilterTab(label: 'Skipped', value: 'skipped', selected: _filter, onTap: (v) => setState(() => _filter = v), count: _skippedCount, color: Colors.orange),
+            ])
+                : Row(children: [
+              _FilterTab(label: 'All',     value: 'all',     selected: _filter, onTap: (v) => setState(() => _filter = v), count: _answers.length),
               const SizedBox(width: 8),
               _FilterTab(label: 'Skipped', value: 'skipped', selected: _filter, onTap: (v) => setState(() => _filter = v), count: _skippedCount, color: Colors.orange),
             ]),
@@ -107,7 +128,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           Expanded(
             child: _filtered.isEmpty
                 ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Text('🎉', style: const TextStyle(fontSize: 48)),
+              const Text('🎉', style: TextStyle(fontSize: 48)),
               const SizedBox(height: 12),
               Text(
                   _filter == 'wrong'   ? 'No wrong answers!' :
@@ -121,7 +142,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
               itemCount: _filtered.length,
               itemBuilder: (context, index) {
                 final answer = _filtered[index];
-                return _AnswerCard(answer: answer, number: _answers.indexOf(answer) + 1);
+                return _AnswerCard(
+                  answer: answer,
+                  number: _answers.indexOf(answer) + 1,
+                  showAnswers: widget.showAnswers,
+                );
               },
             ),
           ),
@@ -135,7 +160,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
 class _AnswerCard extends StatefulWidget {
   final dynamic answer;
   final int number;
-  const _AnswerCard({required this.answer, required this.number});
+  final bool showAnswers;
+  const _AnswerCard({required this.answer, required this.number, required this.showAnswers});
 
   @override
   State<_AnswerCard> createState() => _AnswerCardState();
@@ -144,16 +170,11 @@ class _AnswerCard extends StatefulWidget {
 class _AnswerCardState extends State<_AnswerCard> {
   bool _expanded = false;
 
-  /// Get human-readable answer text
-  /// For MCQ: looks up choice text by choiceId
-  /// For others: returns givenText directly
   String _getAnswerDisplay(dynamic answer) {
     final givenText = answer['givenText'] as String?;
     final choiceId  = answer['choiceId'];
 
-    // If choiceId exists, try to find the choice text from question choices
     if (choiceId != null) {
-      // The answer object may have choices embedded or we fall back to givenText
       final choices = answer['choices'] as List?;
       if (choices != null) {
         for (final c in choices) {
@@ -162,11 +183,7 @@ class _AnswerCardState extends State<_AnswerCard> {
           }
         }
       }
-      // If givenText looks like a number (the choiceId), show it as-is
-      // but if server returned the text in givenText, use that
-      if (givenText != null && givenText != choiceId.toString()) {
-        return givenText;
-      }
+      if (givenText != null && givenText != choiceId.toString()) return givenText;
       return 'Choice ID: $choiceId';
     }
 
@@ -175,13 +192,14 @@ class _AnswerCardState extends State<_AnswerCard> {
 
   @override
   Widget build(BuildContext context) {
-    final answer     = widget.answer;
-    final isCorrect  = answer['correct'] == true;
-    final isSkipped  = answer['givenText'] == null && answer['choiceId'] == null;
-    final givenText  = answer['givenText'] as String?;
+    final answer       = widget.answer;
+    final isCorrect    = answer['correct'] == true;
+    final isSkipped    = answer['givenText'] == null && answer['choiceId'] == null;
     final questionText = answer['questionText'] as String? ?? 'Question ${widget.number}';
-    final essayScore = answer['essayScore'];
+    final essayScore   = answer['essayScore'];
+    final showAnswers  = widget.showAnswers;
 
+    // When showAnswers is false, treat all non-skipped as neutral (no red/green)
     Color cardColor;
     IconData icon;
     String statusLabel;
@@ -190,6 +208,11 @@ class _AnswerCardState extends State<_AnswerCard> {
       cardColor   = Colors.orange;
       icon        = Icons.skip_next;
       statusLabel = 'Skipped';
+    } else if (!showAnswers) {
+      // Answers hidden — just show that the question was answered
+      cardColor   = AppColors.primary;
+      icon        = Icons.check_box_outline_blank;
+      statusLabel = 'Answered';
     } else if (isCorrect) {
       cardColor   = AppColors.correct;
       icon        = Icons.check_circle;
@@ -208,36 +231,32 @@ class _AnswerCardState extends State<_AnswerCard> {
         decoration: BoxDecoration(
           color: TC.surface(context),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-              color: cardColor.withValues(alpha: 0.4), width: 1.5),
+          border: Border.all(color: cardColor.withValues(alpha: 0.4), width: 1.5),
           boxShadow: [BoxShadow(
               color: Colors.black.withValues(alpha: TC.isDark(context) ? 0.2 : 0.04),
               blurRadius: 6, offset: const Offset(0, 2))],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-          // ── Header ───────────────────────────────────────────────────
+          // ── Header ──────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.all(14),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // Number badge
               Container(
                 width: 28, height: 28,
-                decoration: BoxDecoration(
-                    color: cardColor.withValues(alpha: 0.15),
-                    shape: BoxShape.circle),
+                decoration: BoxDecoration(color: cardColor.withValues(alpha: 0.15), shape: BoxShape.circle),
                 child: Center(child: Text('${widget.number}',
                     style: TextStyle(color: cardColor, fontSize: 12, fontWeight: FontWeight.bold))),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(questionText,
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: TC.text(context), height: 1.3),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
+                        color: TC.text(context), height: 1.3),
                     maxLines: _expanded ? null : 2,
                     overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis),
               ),
               const SizedBox(width: 8),
-              // Status chip
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -252,42 +271,49 @@ class _AnswerCardState extends State<_AnswerCard> {
             ]),
           ),
 
-          // ── Expanded details ──────────────────────────────────────────
+          // ── Expanded details ────────────────────────────────────────
           if (_expanded) ...[
             Divider(height: 1, color: TC.divider(context)),
             Padding(
               padding: const EdgeInsets.all(14),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-                // Your answer
                 if (!isSkipped) ...[
-                  Text('Your Answer', style: TextStyle(fontSize: 11, color: TC.subText(context), fontWeight: FontWeight.w600)),
+                  Text('Your Answer',
+                      style: TextStyle(fontSize: 11, color: TC.subText(context), fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                        color: isCorrect
+                        color: !showAnswers
+                            ? AppColors.primary.withValues(alpha: 0.06)
+                            : isCorrect
                             ? AppColors.correct.withValues(alpha: 0.08)
                             : AppColors.wrong.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                            color: isCorrect
+                            color: !showAnswers
+                                ? AppColors.primary.withValues(alpha: 0.2)
+                                : isCorrect
                                 ? AppColors.correct.withValues(alpha: 0.3)
                                 : AppColors.wrong.withValues(alpha: 0.3))),
                     child: Text(
                         _getAnswerDisplay(answer),
                         style: TextStyle(
                             fontSize: 14,
-                            color: isCorrect ? AppColors.correct : AppColors.wrong,
+                            color: !showAnswers
+                                ? TC.text(context)
+                                : isCorrect ? AppColors.correct : AppColors.wrong,
                             fontWeight: FontWeight.w500)),
                   ),
                   const SizedBox(height: 12),
                 ],
 
-                // Essay score if available
+                // Essay score — show regardless of showAnswers (it's a grade, not an answer key)
                 if (essayScore != null) ...[
-                  Text('Essay Score', style: TextStyle(fontSize: 11, color: TC.subText(context), fontWeight: FontWeight.w600)),
+                  Text('Essay Score',
+                      style: TextStyle(fontSize: 11, color: TC.subText(context), fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
                   Container(
                     padding: const EdgeInsets.all(10),
@@ -295,12 +321,12 @@ class _AnswerCardState extends State<_AnswerCard> {
                         color: AppColors.primary.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(10)),
                     child: Text('$essayScore pts',
-                        style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 14)),
+                        style: const TextStyle(color: AppColors.primary,
+                            fontWeight: FontWeight.bold, fontSize: 14)),
                   ),
                   const SizedBox(height: 12),
                 ],
 
-                // Skipped message
                 if (isSkipped)
                   Container(
                     width: double.infinity,
@@ -316,7 +342,7 @@ class _AnswerCardState extends State<_AnswerCard> {
             ),
           ],
 
-          // Tap to expand hint
+          // Tap hint
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
             child: Row(children: [
@@ -342,10 +368,8 @@ class _MiniBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(20)),
-    child: Text(label, style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+    decoration: BoxDecoration(color: color.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
+    child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
   );
 }
 
@@ -354,7 +378,8 @@ class _FilterTab extends StatelessWidget {
   final int count;
   final Color? color;
   final void Function(String) onTap;
-  const _FilterTab({required this.label, required this.value, required this.selected, required this.onTap, required this.count, this.color});
+  const _FilterTab({required this.label, required this.value, required this.selected,
+    required this.onTap, required this.count, this.color});
 
   @override
   Widget build(BuildContext context) {

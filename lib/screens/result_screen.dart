@@ -41,7 +41,7 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
 
     Future.delayed(const Duration(milliseconds: 300), () { if (mounted) _cardAnimController.forward(); });
     Future.delayed(const Duration(milliseconds: 600), () { if (mounted) _scoreAnimController.forward(); });
-    // Play finish sound
+
     SoundService().stopBackground();
     if (widget.attemptData['offline'] != true) SoundService().playFinish();
 
@@ -50,14 +50,12 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
     final totalPoints = (widget.attemptData['totalPoints'] ?? 0).toDouble();
     final percent     = totalPoints > 0 ? (score / totalPoints * 100) : 0;
 
-    // Fire confetti if score >= 50%
     if (!isOffline && percent >= 50) {
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) _confettiController.play();
       });
     }
 
-    // Show XP popup after 1.5s
     if (isOffline != true) {
       Future.delayed(const Duration(milliseconds: 1500), () async {
         if (!mounted) return;
@@ -67,8 +65,7 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
         final xpEarned  = xpService.calculateQuizXp(score, totalPoints);
         final oldXp     = (newXp - xpEarned).clamp(0, newXp);
         if (mounted) {
-          await XpPopup.show(context,
-              xpEarned: xpEarned, oldXp: oldXp, newXp: newXp);
+          await XpPopup.show(context, xpEarned: xpEarned, oldXp: oldXp, newXp: newXp);
         }
       });
     }
@@ -84,7 +81,7 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    final bool isOffline = widget.attemptData['offline'] == true;
+    final bool isOffline    = widget.attemptData['offline'] == true;
     final int totalQuestions = widget.attemptData['totalQuestions'] ?? 0;
     final int answeredCount  = widget.attemptData['answeredCount']  ?? 0;
     final int skippedCount   = widget.attemptData['skippedCount']   ?? 0;
@@ -105,6 +102,12 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
         : percent >= 75 ? AppColors.correct
         : percent >= 50 ? Colors.orange
         : AppColors.wrong;
+
+    // ── showAnswers controls whether to reveal correct/wrong breakdown ────────
+    // Read from attempt response (server echoes quiz.showAnswers) OR from the
+    // quiz object passed by QuizScreen — whichever is available.
+    final bool showAnswers = widget.attemptData['showAnswers'] == true ||
+        widget.quiz.showAnswers;
 
     return Scaffold(
       backgroundColor: TC.bg(context),
@@ -184,8 +187,10 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
                       textAlign: TextAlign.center),
                   const SizedBox(height: 28),
 
-                  // Stats
-                  answers.isNotEmpty
+                  // ── Stats row ──────────────────────────────────────────────────
+                  // Show correct/wrong breakdown ONLY if teacher enabled showAnswers.
+                  // Otherwise show answered/skipped stats (score still visible below).
+                  showAnswers && answers.isNotEmpty
                       ? Row(children: [
                     Expanded(child: _StatCard(label: 'Correct', value: '$correctCount', color: AppColors.correct)),
                     const SizedBox(width: 8),
@@ -242,8 +247,7 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
                       ],
 
                       // Ring
-                      Text(
-                          isOffline ? 'Completion' : totalPoints > 0 ? 'Score' : 'Completion',
+                      Text(isOffline ? 'Completion' : totalPoints > 0 ? 'Score' : 'Completion',
                           style: TextStyle(fontSize: 14, color: TC.subText(context))),
                       const SizedBox(height: 20),
                       SizedBox(
@@ -279,7 +283,7 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
                             borderRadius: BorderRadius.circular(20)),
                         child: Text(
                             isOffline ? '⏳ Will sync when back online'
-                                : answers.isNotEmpty
+                                : showAnswers && answers.isNotEmpty
                                 ? '$correctCount correct · $wrongCount wrong · $skippedCount skipped'
                                 : skippedCount == 0 ? '🎉 All questions answered!'
                                 : '$skippedCount question${skippedCount > 1 ? 's' : ''} unanswered',
@@ -290,37 +294,67 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
 
                   const SizedBox(height: 28),
 
-                  // Review button
+                  // ── Answer review section ───────────────────────────────────
                   if (isOffline != true) ...[
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          Map<String, dynamic> reviewData = widget.attemptData;
-                          if (answers.isEmpty) {
-                            try {
-                              final id = widget.attemptData['attemptId'] ?? widget.attemptData['id'];
-                              if (id != null && id != -1) {
-                                reviewData = await ApiService.getAttempt(id);
-                              }
-                            } catch (_) {}
-                          }
-                          if (!context.mounted) return;
-                          Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => ReviewScreen(attemptData: reviewData)));
-                        },
-                        icon: const Icon(Icons.rate_review_outlined),
-                        label: const Text('Review Answers',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: const BorderSide(color: AppColors.primary, width: 2),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          minimumSize: const Size(double.infinity, 0),
+                    if (showAnswers) ...[
+                      // Teacher has released answers → show Review button
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            Map<String, dynamic> reviewData = widget.attemptData;
+                            if (answers.isEmpty) {
+                              try {
+                                final id = widget.attemptData['attemptId'] ?? widget.attemptData['id'];
+                                if (id != null && id != -1) {
+                                  reviewData = await ApiService.getAttempt(id);
+                                }
+                              } catch (_) {}
+                            }
+                            if (!context.mounted) return;
+                            Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => ReviewScreen(
+                                    attemptData: reviewData,
+                                    showAnswers: true)));
+                          },
+                          icon: const Icon(Icons.rate_review_outlined),
+                          label: const Text('Review Answers',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(color: AppColors.primary, width: 2),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            minimumSize: const Size(double.infinity, 0),
+                          ),
                         ),
                       ),
-                    ),
+                    ] else ...[
+                      // Teacher has NOT released answers
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: TC.surface(context),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: TC.divider(context)),
+                        ),
+                        child: Row(children: [
+                          Icon(Icons.lock_outline, color: TC.subText(context), size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text('Answer details not yet available',
+                                  style: TextStyle(fontWeight: FontWeight.w600,
+                                      fontSize: 14, color: TC.text(context))),
+                              const SizedBox(height: 2),
+                              Text('Your teacher will release the answer breakdown when ready.',
+                                  style: TextStyle(fontSize: 12, color: TC.subText(context))),
+                            ]),
+                          ),
+                        ]),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                   ],
 

@@ -14,7 +14,7 @@ class DbService {
     final path = join(await getDatabasesPath(), 'quizapp.db');
     return openDatabase(
       path,
-      version: 3, // bumped for per-user submitted_quizzes
+      version: 4, // v4: adds timeLimitMinutes, deadline, showAnswers to quizzes
       onCreate: (db, version) async {
         await _createTables(db);
       },
@@ -30,7 +30,6 @@ class DbService {
           ''');
         }
         if (oldVersion < 3) {
-          // Recreate with userId support
           await db.execute('DROP TABLE IF EXISTS submitted_quizzes');
           await db.execute('''
             CREATE TABLE submitted_quizzes (
@@ -40,6 +39,12 @@ class DbService {
               PRIMARY KEY (quizId, userId)
             )
           ''');
+        }
+        if (oldVersion < 4) {
+          // Add teacher-controlled quiz fields
+          try { await db.execute('ALTER TABLE quizzes ADD COLUMN timeLimitMinutes INTEGER'); } catch (_) {}
+          try { await db.execute('ALTER TABLE quizzes ADD COLUMN deadline TEXT'); } catch (_) {}
+          try { await db.execute('ALTER TABLE quizzes ADD COLUMN showAnswers INTEGER DEFAULT 0'); } catch (_) {}
         }
       },
     );
@@ -80,7 +85,10 @@ class DbService {
         questionCount INTEGER,
         totalPoints REAL,
         teacherName TEXT,
-        createdAt TEXT
+        createdAt TEXT,
+        timeLimitMinutes INTEGER,
+        deadline TEXT,
+        showAnswers INTEGER DEFAULT 0
       )
     ''');
 
@@ -119,7 +127,6 @@ class DbService {
       )
     ''');
 
-    // ── tracks which quizzes have been submitted per user (one-time lock) ──────
     await db.execute('''
       CREATE TABLE submitted_quizzes (
         quizId INTEGER,
@@ -187,15 +194,18 @@ class DbService {
     await database.delete('quizzes', where: 'classroomId = ?', whereArgs: [classroomId]);
     for (final q in quizzes) {
       await database.insert('quizzes', {
-        'id':            q['id'],
-        'classroomId':   classroomId,
-        'title':         q['title'],
-        'description':   q['description'],
-        'published':     (q['published'] == true) ? 1 : 0,
-        'questionCount': q['questionCount'] ?? 0,
-        'totalPoints':   q['totalPoints']   ?? 0.0,
-        'teacherName':   q['teacherName'],
-        'createdAt':     q['createdAt'],
+        'id':                q['id'],
+        'classroomId':       classroomId,
+        'title':             q['title'],
+        'description':       q['description'],
+        'published':         (q['published'] == true) ? 1 : 0,
+        'questionCount':     q['questionCount']     ?? 0,
+        'totalPoints':       q['totalPoints']       ?? 0.0,
+        'teacherName':       q['teacherName'],
+        'createdAt':         q['createdAt'],
+        'timeLimitMinutes':  q['timeLimitMinutes'],         // null = no limit
+        'deadline':          q['deadline'],                  // null = no deadline
+        'showAnswers':       (q['showAnswers'] == true) ? 1 : 0,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
   }
@@ -210,6 +220,23 @@ class DbService {
   static Future<void> saveQuizDetail(Map<String, dynamic> quiz) async {
     final database = await db;
     final questions = quiz['questions'] as List<dynamic>? ?? [];
+
+    // Upsert the quiz row itself (preserves teacher-control fields)
+    await database.insert('quizzes', {
+      'id':                quiz['id'],
+      'classroomId':       quiz['classRoomId'] ?? 0,
+      'title':             quiz['title'],
+      'description':       quiz['description'],
+      'published':         (quiz['published'] == true) ? 1 : 0,
+      'questionCount':     questions.length,
+      'totalPoints':       quiz['totalPoints'] ?? 0.0,
+      'teacherName':       quiz['teacherName'],
+      'createdAt':         quiz['createdAt'],
+      'timeLimitMinutes':  quiz['timeLimitMinutes'],
+      'deadline':          quiz['deadline'],
+      'showAnswers':       (quiz['showAnswers'] == true) ? 1 : 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
     await database.delete('questions', where: 'quizId = ?', whereArgs: [quiz['id']]);
     for (final q in questions) {
       await database.insert('questions', {
@@ -228,7 +255,13 @@ class DbService {
     final database = await db;
     final quizRows = await database.query('quizzes', where: 'id = ?', whereArgs: [quizId]);
     if (quizRows.isEmpty) return null;
+
     final quiz = Map<String, dynamic>.from(quizRows.first);
+
+    // Restore teacher-control fields to expected JSON key names
+    quiz['classRoomId']  = quiz['classroomId'];
+    quiz['showAnswers']  = quiz['showAnswers'] == 1;
+
     final questionRows = await database.query('questions',
         where: 'quizId = ?', whereArgs: [quizId], orderBy: 'qIndex ASC');
     quiz['questions'] = questionRows.map((q) {
@@ -239,9 +272,8 @@ class DbService {
     return quiz;
   }
 
-  // ── Submitted quizzes (one-time lock) ─────────────────────────────────────
+  // ── Submitted quizzes (one-time lock per user) ────────────────────────────
 
-  /// Mark a quiz as submitted for the current user — prevents re-taking
   static Future<void> markQuizSubmitted(int quizId, int userId) async {
     final database = await db;
     await database.insert('submitted_quizzes', {
@@ -251,7 +283,6 @@ class DbService {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  /// Check if a quiz has already been submitted by this user
   static Future<bool> isQuizSubmitted(int quizId, int userId) async {
     final database = await db;
     final rows = await database.query(
@@ -262,7 +293,6 @@ class DbService {
     return rows.isNotEmpty;
   }
 
-  /// Clear submitted quizzes (used on logout so next student can take it)
   static Future<void> clearSubmittedQuizzes() async {
     final database = await db;
     await database.delete('submitted_quizzes');

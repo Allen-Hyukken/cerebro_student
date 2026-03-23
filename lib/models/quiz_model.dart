@@ -43,7 +43,6 @@ class ClassroomModel {
     teacherName:  j['teacherName'],
     quizCount:    _parseInt(j['quizCount']),
     studentCount: _parseInt(j['studentCount']),
-    // handles bool (from API) or int 0/1 (from SQLite)
     hasBanner:    j['hasBanner'] == true || j['hasBanner'] == 1,
   );
 }
@@ -59,6 +58,17 @@ class QuizModel {
   final double totalPoints;
   final String? createdAt;
 
+  // ── Teacher-set controls ───────────────────────────────────────────────────
+  /// Minutes the student has after opening the quiz. null = no limit.
+  final int? timeLimitMinutes;
+
+  /// ISO-8601 deadline string. null = no deadline.
+  final String? deadline;
+
+  /// When true, the student can see the correct/wrong answer breakdown
+  /// on the result and review screens after submitting.
+  final bool showAnswers;
+
   QuizModel({
     required this.id,
     required this.title,
@@ -69,18 +79,42 @@ class QuizModel {
     this.questionCount = 0,
     this.totalPoints = 0,
     this.createdAt,
+    this.timeLimitMinutes,
+    this.deadline,
+    this.showAnswers = false,
   });
 
+  /// Returns the parsed deadline as a local [DateTime], or null.
+  DateTime? get deadlineDateTime {
+    if (deadline == null) return null;
+    try {
+      return DateTime.parse(deadline!).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// True when the quiz deadline has already passed.
+  bool get isDeadlinePassed {
+    final dt = deadlineDateTime;
+    if (dt == null) return false;
+    return DateTime.now().isAfter(dt);
+  }
+
   factory QuizModel.fromJson(Map<String, dynamic> j) => QuizModel(
-    id:            _parseInt(j['id']),
-    title:         j['title']         ?? '',
-    description:   j['description'],
-    classRoomId:   _parseInt(j['classRoomId']),
-    classRoomName: j['classRoomName'],
-    teacherName:   j['teacherName'],
-    questionCount: _parseInt(j['questionCount']),
-    totalPoints:   _parseDouble(j['totalPoints']),
-    createdAt:     j['createdAt'],
+    id:                _parseInt(j['id']),
+    title:             j['title']         ?? '',
+    description:       j['description'],
+    classRoomId:       _parseInt(j['classRoomId']),
+    classRoomName:     j['classRoomName'],
+    teacherName:       j['teacherName'],
+    questionCount:     _parseInt(j['questionCount']),
+    totalPoints:       _parseDouble(j['totalPoints']),
+    createdAt:         j['createdAt'],
+    // Teacher-controlled fields — safe defaults when absent (e.g. offline cache)
+    timeLimitMinutes:  j['timeLimitMinutes'] != null ? _parseInt(j['timeLimitMinutes']) : null,
+    deadline:          j['deadline'] as String?,
+    showAnswers:       j['showAnswers'] == true || j['showAnswers'] == 1,
   );
 }
 
@@ -135,6 +169,8 @@ class AttemptModel {
   final int answeredCount;
   final int skippedCount;
   final String? submittedAt;
+  /// Mirrors quiz.showAnswers — whether the teacher released the answer breakdown.
+  final bool showAnswers;
 
   AttemptModel({
     required this.id,
@@ -146,6 +182,7 @@ class AttemptModel {
     required this.answeredCount,
     required this.skippedCount,
     this.submittedAt,
+    this.showAnswers = false,
   });
 
   double get completionPercent =>
@@ -161,6 +198,7 @@ class AttemptModel {
     answeredCount:  _parseInt(j['answeredCount']),
     skippedCount:   _parseInt(j['skippedCount']),
     submittedAt:    j['submittedAt'],
+    showAnswers:    j['showAnswers'] == true || j['showAnswers'] == 1,
   );
 }
 
