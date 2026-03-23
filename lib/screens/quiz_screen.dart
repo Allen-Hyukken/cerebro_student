@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:quiz_app/theme/app_theme.dart';
 import 'package:quiz_app/models/quiz_model.dart';
@@ -23,30 +22,19 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   final Map<String, TextEditingController> _controllers = {};
   bool _submitting = false;
 
-  // ── Per-question timer (used when teacher set NO global time limit) ────────
-  Timer? _qTimer;
-  int  _qSecondsLeft = 30;
-  bool _qWarning     = false;
-  bool _qExpired     = false;
-
-  static const Map<String, int> _qDurations = {
-    'MCQ':    30,
-    'TF':     20,
-    'IDENT':  60,
-    'ESSAY':  180,
-    'CODING': 300,
-  };
-
-  // ── Global quiz timer (used when teacher SET a time limit) ────────────────
+  // ── Single global timer — counts down from teacher's time limit ───────────
+  // This timer runs for the ENTIRE quiz, not per question.
+  // It persists as the student navigates between questions.
   Timer? _globalTimer;
-  int  _globalSecondsLeft = 0;
-  bool _globalWarningFired = false;  // plays sound once at 60 s
-  bool _globalCritical    = false;   // last 30 s
+  int  _globalSecondsLeft  = 0;
+  bool _warningAt60Fired   = false; // plays sound once at 60 s remaining
+  bool _warningAt30Fired   = false; // plays sound once at 30 s remaining
 
-  bool get _hasGlobalTimer => widget.quiz.timeLimitMinutes != null;
+  // True when teacher set a time limit on this quiz
+  bool get _hasTimer => widget.quiz.timeLimitMinutes != null;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  List<QuestionModel> get questions      => widget.questions;
+  List<QuestionModel> get questions       => widget.questions;
   QuestionModel       get currentQuestion => questions[_currentIndex];
   bool get isLastQuestion  => _currentIndex == questions.length - 1;
   bool get isFirstQuestion => _currentIndex == 0;
@@ -56,27 +44,26 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     return val != null && val.trim().isNotEmpty;
   }
 
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
-
-    if (_hasGlobalTimer) {
+    if (_hasTimer) {
+      // Initialise seconds from teacher's minutes setting
       _globalSecondsLeft = widget.quiz.timeLimitMinutes! * 60;
       _startGlobalTimer();
-    } else {
-      _startQTimer();
     }
   }
 
   @override
   void dispose() {
-    _qTimer?.cancel();
     _globalTimer?.cancel();
     for (final c in _controllers.values) c.dispose();
     super.dispose();
   }
 
-  // ── Global timer ───────────────────────────────────────────────────────────
+  // ── Global timer logic ────────────────────────────────────────────────────
 
   void _startGlobalTimer() {
     _globalTimer?.cancel();
@@ -86,21 +73,24 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         if (_globalSecondsLeft > 0) {
           _globalSecondsLeft--;
 
-          // Play warning sound once when 60 s remain
-          if (_globalSecondsLeft == 60 && !_globalWarningFired) {
-            _globalWarningFired = true;
+          // Warning sounds — play once each
+          if (_globalSecondsLeft == 60 && !_warningAt60Fired) {
+            _warningAt60Fired = true;
             SoundService().playWarning();
           }
-          _globalCritical = _globalSecondsLeft <= 30;
+          if (_globalSecondsLeft == 30 && !_warningAt30Fired) {
+            _warningAt30Fired = true;
+            SoundService().playWarning();
+          }
         } else {
           t.cancel();
-          _onGlobalTimeExpired();
+          _onTimeExpired();
         }
       });
     });
   }
 
-  void _onGlobalTimeExpired() {
+  void _onTimeExpired() {
     if (_submitting) return;
     SoundService().playWarning();
     _autoSubmit();
@@ -110,7 +100,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     if (_submitting || !mounted) return;
     setState(() => _submitting = true);
 
-    // Brief notice — non-blocking
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Row(children: [
@@ -127,85 +116,36 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     await _doSubmit();
   }
 
-  String get _globalTimerDisplay {
+  // ── Timer display helpers ─────────────────────────────────────────────────
+
+  String get _timerDisplay {
     final m = _globalSecondsLeft ~/ 60;
     final s = _globalSecondsLeft % 60;
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
-  Color get _globalTimerColor {
-    if (_globalCritical) return AppColors.wrong;
+  /// Colour shifts green → orange → red as time drains
+  Color get _timerColor {
+    if (_globalSecondsLeft <= 30)  return AppColors.wrong;
     if (_globalSecondsLeft <= 120) return Colors.orange;
     return AppColors.correct;
   }
 
-  // ── Per-question timer ─────────────────────────────────────────────────────
-
-  int _qDuration(String type) => _qDurations[type] ?? 60;
-
-  void _startQTimer() {
-    _qTimer?.cancel();
-    setState(() {
-      _qSecondsLeft = _qDuration(currentQuestion.type);
-      _qWarning     = false;
-      _qExpired     = false;
-    });
-
-    _qTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) { t.cancel(); return; }
-      setState(() {
-        if (_qSecondsLeft > 0) {
-          _qSecondsLeft--;
-          _qWarning = _qSecondsLeft <= 10 && _qSecondsLeft > 0;
-          if (_qSecondsLeft == 10) SoundService().playWarning();
-        } else {
-          _qExpired = true;
-          _qWarning = false;
-          t.cancel();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Row(children: [
-              Icon(Icons.timer_off, color: Colors.white, size: 18),
-              SizedBox(width: 8),
-              Text("Time's up! You can still answer."),
-            ]),
-            backgroundColor: Colors.orange.shade700,
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ));
-        }
-      });
-    });
-  }
-
-  String get _qTimerDisplay {
-    final m = _qSecondsLeft ~/ 60;
-    final s = _qSecondsLeft % 60;
-    return m > 0 ? '$m:${s.toString().padLeft(2, '0')}' : '$_qSecondsLeft';
-  }
-
-  Color get _qTimerColor {
-    if (_qExpired)  return Colors.grey;
-    if (_qWarning)  return AppColors.wrong;
-    if (_qSecondsLeft <= 20) return Colors.orange;
-    return AppColors.correct;
-  }
+  bool get _isCritical => _globalSecondsLeft <= 30;
 
   // ── Navigation ─────────────────────────────────────────────────────────────
 
   TextEditingController _controllerFor(String key) =>
       _controllers.putIfAbsent(key, () => TextEditingController(text: _answers[key] ?? ''));
 
-  void _goTo(int index) {
-    setState(() => _currentIndex = index);
-    if (!_hasGlobalTimer) _startQTimer();
-  }
+  /// Navigate to a specific question index.
+  /// The global timer is NOT reset — it keeps counting from wherever it was.
+  void _goTo(int index) => setState(() => _currentIndex = index);
 
   void _goNext() {
     if (!isLastQuestion) {
       SoundService().playNext();
       setState(() => _currentIndex++);
-      if (!_hasGlobalTimer) _startQTimer();
     }
   }
 
@@ -213,7 +153,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     if (!isFirstQuestion) {
       SoundService().playNext();
       setState(() => _currentIndex--);
-      if (!_hasGlobalTimer) _startQTimer();
     }
   }
 
@@ -224,7 +163,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           : (_currentIndex - i + questions.length) % questions.length;
       if (!_isAnswered(next)) {
         setState(() => _currentIndex = next);
-        if (!_hasGlobalTimer) _startQTimer();
         return;
       }
     }
@@ -239,7 +177,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   Future<void> _submitQuiz() async {
     if (_submitting) return;
-    final answeredCount = questions.where((q) => _isAnswered(questions.indexOf(q))).length;
+    final answeredCount = questions
+        .where((q) => _isAnswered(questions.indexOf(q)))
+        .length;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -267,7 +207,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _doSubmit() async {
-    _qTimer?.cancel();
     _globalTimer?.cancel();
 
     final submittable = Map<String, String>.fromEntries(
@@ -291,58 +230,65 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   }
 
   void _showNavigator() {
-    if (!_hasGlobalTimer) _qTimer?.cancel();
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 16),
-            const Text('Questions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 10, runSpacing: 10,
-              children: List.generate(questions.length, (i) {
-                final answered  = _isAnswered(i);
-                final isCurrent = i == _currentIndex;
-                return GestureDetector(
-                  onTap: () { Navigator.pop(ctx); _goTo(i); },
-                  child: Container(
-                    width: 44, height: 44,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isCurrent ? AppColors.primary : answered ? AppColors.correct : Colors.grey.shade200,
-                    ),
-                    child: Center(child: Text('${i + 1}',
-                        style: TextStyle(
-                          color: (isCurrent || answered) ? Colors.white : Colors.grey.shade600,
-                          fontWeight: FontWeight.bold,
-                        ))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Questions',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10, runSpacing: 10,
+            children: List.generate(questions.length, (i) {
+              final answered  = _isAnswered(i);
+              final isCurrent = i == _currentIndex;
+              return GestureDetector(
+                onTap: () { Navigator.pop(ctx); _goTo(i); },
+                child: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isCurrent
+                        ? AppColors.primary
+                        : answered
+                        ? AppColors.correct
+                        : Colors.grey.shade200,
                   ),
-                );
-              }),
-            ),
-            const SizedBox(height: 16),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              _legend(AppColors.primary, 'Current'),
-              const SizedBox(width: 16),
-              _legend(AppColors.correct, 'Answered'),
-              const SizedBox(width: 16),
-              _legend(Colors.grey.shade200, 'Unanswered', textColor: Colors.grey),
-            ]),
-            const SizedBox(height: 8),
+                  child: Center(child: Text('${i + 1}',
+                      style: TextStyle(
+                        color: (isCurrent || answered) ? Colors.white : Colors.grey.shade600,
+                        fontWeight: FontWeight.bold,
+                      ))),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 16),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            _legend(AppColors.primary, 'Current'),
+            const SizedBox(width: 16),
+            _legend(AppColors.correct, 'Answered'),
+            const SizedBox(width: 16),
+            _legend(Colors.grey.shade200, 'Unanswered', textColor: Colors.grey),
           ]),
-        ),
+          const SizedBox(height: 8),
+        ]),
       ),
-    ).then((_) { if (!_hasGlobalTimer) _startQTimer(); });
+    );
   }
 
   Widget _legend(Color color, String label, {Color? textColor}) => Row(children: [
-    Container(width: 14, height: 14, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
+    Container(width: 14, height: 14,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
     const SizedBox(width: 4),
     Text(label, style: TextStyle(fontSize: 12, color: textColor ?? Colors.grey.shade600)),
   ]);
@@ -352,12 +298,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     if (questions.isEmpty) {
-      return Scaffold(backgroundColor: TC.bg(context),
+      return Scaffold(
+          backgroundColor: TC.bg(context),
           body: const Center(child: Text('No questions found.')));
     }
 
     final progress      = (_currentIndex + 1) / questions.length;
-    final answeredSoFar = questions.where((q) => _isAnswered(questions.indexOf(q))).length;
+    final answeredSoFar = questions
+        .where((q) => _isAnswered(questions.indexOf(q)))
+        .length;
 
     return Scaffold(
       backgroundColor: TC.bg(context),
@@ -398,15 +347,14 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           ]),
         ),
 
-        // ── Timer bar ─────────────────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _hasGlobalTimer
-              ? _buildGlobalTimerBar()
-              : _buildPerQuestionTimerBar(),
-        ),
+        // ── Timer bar (only shown when teacher set a time limit) ──────────
+        if (_hasTimer)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _buildTimerBar(),
+          ),
 
-        const SizedBox(height: 8),
+        if (_hasTimer) const SizedBox(height: 8),
 
         // ── Question body ─────────────────────────────────────────────────
         Expanded(
@@ -415,32 +363,40 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const SizedBox(height: 8),
               Row(children: [
+                // Question type badge
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _typeColor(currentQuestion.type).withValues(alpha: TC.isDark(context) ? 0.2 : 0.12),
+                    color: _typeColor(currentQuestion.type)
+                        .withValues(alpha: TC.isDark(context) ? 0.2 : 0.12),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(_typeLabel(currentQuestion.type),
-                      style: TextStyle(color: _typeColor(currentQuestion.type),
+                      style: TextStyle(
+                          color: _typeColor(currentQuestion.type),
                           fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
                 const Spacer(),
+                // Points badge
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: TC.isDark(context) ? 0.2 : 0.08),
+                    color: AppColors.primary.withValues(
+                        alpha: TC.isDark(context) ? 0.2 : 0.08),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                      '${currentQuestion.points} pt${currentQuestion.points == 1 ? '' : 's'}',
-                      style: const TextStyle(color: AppColors.primary,
+                      '${currentQuestion.points} '
+                          'pt${currentQuestion.points == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                          color: AppColors.primary,
                           fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               ]),
               const SizedBox(height: 14),
               Text(currentQuestion.text,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold,
                       color: AppColors.textDark, height: 1.4)),
               const SizedBox(height: 24),
               _buildAnswerWidget(),
@@ -462,7 +418,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.grey,
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 )
               else const SizedBox(width: 60),
@@ -475,40 +432,58 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.grey,
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 )
               else const SizedBox(width: 60),
             ]),
             const SizedBox(height: 4),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              _NavButton(icon: Icons.arrow_back_ios,    enabled: !isFirstQuestion, onTap: _goPrev),
+              _NavButton(
+                  icon: Icons.arrow_back_ios,
+                  enabled: !isFirstQuestion,
+                  onTap: _goPrev),
               if (isLastQuestion)
                 ElevatedButton.icon(
                   onPressed: _submitting ? null : _submitQuiz,
                   icon: _submitting
                       ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
                       : const Icon(Icons.send, size: 16),
-                  label: Text(_submitting ? 'Submitting...' : 'Submit',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  label: Text(
+                      _submitting ? 'Submitting...' : 'Submit',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 15)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.confirm, foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    backgroundColor: AppColors.confirm,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                   ),
                 )
               else
                 ElevatedButton(
                   onPressed: _goNext,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary, foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                   ),
-                  child: const Text('Next', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  child: const Text('Next',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 15)),
                 ),
-              _NavButton(icon: Icons.arrow_forward_ios, enabled: !isLastQuestion, onTap: _goNext),
+              _NavButton(
+                  icon: Icons.arrow_forward_ios,
+                  enabled: !isLastQuestion,
+                  onTap: _goNext),
             ]),
           ]),
         ),
@@ -516,31 +491,39 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Global timer bar ──────────────────────────────────────────────────────
+  // ── Timer bar widget ──────────────────────────────────────────────────────
+  // Shared single bar for the whole quiz.
+  // Progress drains from full → empty as time runs out.
 
-  Widget _buildGlobalTimerBar() {
-    final color = _globalTimerColor;
+  Widget _buildTimerBar() {
     final totalSec = widget.quiz.timeLimitMinutes! * 60;
-    final progress = _globalSecondsLeft / totalSec;
+    final progress = (_globalSecondsLeft / totalSec).clamp(0.0, 1.0);
+    final color    = _timerColor;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: _globalCritical
-            ? AppColors.wrong.withValues(alpha: 0.1)
-            : color.withValues(alpha: 0.07),
+        color: _isCritical
+            ? AppColors.wrong.withValues(alpha: 0.10)
+            : _globalSecondsLeft <= 120
+            ? Colors.orange.withValues(alpha: 0.08)
+            : AppColors.correct.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        border: Border.all(color: color.withValues(alpha: 0.40)),
       ),
       child: Row(children: [
-        Icon(Icons.hourglass_bottom_rounded, color: color, size: 20),
+        // Pulsing icon when critical
+        _isCritical
+            ? _PulsingIcon(color: color)
+            : Icon(Icons.hourglass_bottom_rounded, color: color, size: 20),
         const SizedBox(width: 10),
+        // Draining progress bar
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
-              value: progress.clamp(0.0, 1.0),
+              value: progress,
               minHeight: 6,
               backgroundColor: TC.card(context),
               valueColor: AlwaysStoppedAnimation<Color>(color),
@@ -548,15 +531,16 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(width: 10),
+        // Countdown display — grows slightly when critical
         AnimatedDefaultTextStyle(
           duration: const Duration(milliseconds: 300),
           style: TextStyle(
-            fontSize: _globalCritical ? 17 : 15,
+            fontSize: _isCritical ? 17 : 15,
             fontWeight: FontWeight.bold,
             color: color,
             fontFamily: 'monospace',
           ),
-          child: Text(_globalTimerDisplay),
+          child: Text(_timerDisplay),
         ),
         const SizedBox(width: 6),
         Text('left', style: TextStyle(fontSize: 11, color: TC.subText(context))),
@@ -564,68 +548,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Per-question timer bar ─────────────────────────────────────────────────
-
-  Widget _buildPerQuestionTimerBar() {
-    final totalDuration = _qDuration(currentQuestion.type);
-    final timerProgress = _qSecondsLeft / totalDuration;
-    final color         = _qTimerColor;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: _qExpired
-            ? Colors.grey.shade100
-            : _qWarning
-            ? AppColors.wrong.withValues(alpha: 0.08)
-            : AppColors.correct.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: _qExpired
-              ? Colors.grey.shade300
-              : _qWarning
-              ? AppColors.wrong.withValues(alpha: 0.4)
-              : AppColors.correct.withValues(alpha: 0.3),
-        ),
-      ),
-      child: Row(children: [
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: Icon(
-            _qExpired ? Icons.timer_off : Icons.timer_outlined,
-            key: ValueKey(_qExpired),
-            color: color, size: 20,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: _qExpired ? 0 : timerProgress,
-              minHeight: 6,
-              backgroundColor: Colors.grey.shade200,
-              valueColor: AlwaysStoppedAnimation<Color>(color),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        AnimatedDefaultTextStyle(
-          duration: const Duration(milliseconds: 300),
-          style: TextStyle(
-            fontSize: _qWarning ? 17 : 15,
-            fontWeight: FontWeight.bold,
-            color: color,
-            fontFamily: 'monospace',
-          ),
-          child: Text(_qExpired ? "Time's up!" : _qTimerDisplay),
-        ),
-      ]),
-    );
-  }
-
-  // ── Type helpers ──────────────────────────────────────────────────────────
+  // ── Question type helpers ─────────────────────────────────────────────────
 
   String _typeLabel(String type) {
     switch (type) {
@@ -652,8 +575,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // ── Answer widgets ────────────────────────────────────────────────────────
 
   Widget _buildAnswerWidget() {
-    final q           = currentQuestion;
-    final qId         = q.id.toString();
+    final q             = currentQuestion;
+    final qId           = q.id.toString();
     final currentAnswer = _answers[qId];
 
     switch (q.type) {
@@ -677,7 +600,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                     width: 2,
                   ),
                   boxShadow: isSelected
-                      ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.25),
+                      ? [BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.25),
                       blurRadius: 8, offset: const Offset(0, 4))]
                       : [],
                 ),
@@ -687,7 +611,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                          color: isSelected ? Colors.white : Colors.grey.shade400, width: 2),
+                          color: isSelected ? Colors.white : Colors.grey.shade400,
+                          width: 2),
                       color: isSelected ? Colors.white : Colors.transparent,
                     ),
                     child: isSelected
@@ -719,20 +644,25 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                   duration: const Duration(milliseconds: 150),
                   margin: EdgeInsets.only(
                       right: option == 'True' ? 8 : 0,
-                      left: option == 'False' ? 8 : 0),
+                      left:  option == 'False' ? 8 : 0),
                   height: 72,
                   decoration: BoxDecoration(
                     color: isSelected ? color : TC.surface(context),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: isSelected ? color : TC.divider(context), width: 2),
+                    border: Border.all(
+                        color: isSelected ? color : TC.divider(context), width: 2),
                     boxShadow: isSelected
                         ? [BoxShadow(color: color.withValues(alpha: 0.3),
                         blurRadius: 8, offset: const Offset(0, 4))]
                         : [],
                   ),
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(option == 'True' ? Icons.check_circle_outline : Icons.cancel_outlined,
-                        color: isSelected ? Colors.white : color, size: 22),
+                    Icon(
+                        option == 'True'
+                            ? Icons.check_circle_outline
+                            : Icons.cancel_outlined,
+                        color: isSelected ? Colors.white : color,
+                        size: 22),
                     const SizedBox(height: 4),
                     Text(option, style: TextStyle(
                       color: isSelected ? Colors.white : TC.text(context),
@@ -749,7 +679,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         final ctrl = _controllerFor(qId);
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Type your answer below:',
-              style: TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w500)),
+              style: TextStyle(
+                  fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           TextField(
             controller: ctrl,
@@ -758,14 +689,20 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
             decoration: InputDecoration(
               hintText: 'Your answer...',
               filled: true, fillColor: TC.input(context),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
                   borderSide: const BorderSide(color: AppColors.primary, width: 2)),
               contentPadding: const EdgeInsets.all(16),
               suffixIcon: currentAnswer != null && currentAnswer.isNotEmpty
                   ? IconButton(
                   icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
-                  onPressed: () { ctrl.clear(); setState(() => _answers.remove(qId)); })
+                  onPressed: () {
+                    ctrl.clear();
+                    setState(() => _answers.remove(qId));
+                  })
                   : null,
             ),
           ),
@@ -775,7 +712,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         final ctrl = _controllerFor(qId);
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Write your answer below:',
-              style: TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w500)),
+              style: TextStyle(
+                  fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           TextField(
             controller: ctrl,
@@ -785,8 +723,11 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
             decoration: InputDecoration(
               hintText: 'Write your answer here...',
               filled: true, fillColor: TC.input(context),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
                   borderSide: const BorderSide(color: AppColors.primary, width: 2)),
               contentPadding: const EdgeInsets.all(16),
               alignLabelWithHint: true,
@@ -798,7 +739,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
               child: Row(children: [
                 const Icon(Icons.info_outline, size: 13, color: Colors.grey),
                 const SizedBox(width: 4),
-                Text('${currentAnswer.trim().split(RegExp(r'\s+')).length} words',
+                Text(
+                    '${currentAnswer.trim().split(RegExp(r'\s+')).length} words',
                     style: const TextStyle(fontSize: 12, color: Colors.grey)),
               ]),
             ),
@@ -812,31 +754,46 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: const BoxDecoration(
               color: AppColors.codeCard,
-              borderRadius: BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
+              borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(14), topRight: Radius.circular(14)),
             ),
             child: const Row(children: [
               Icon(Icons.code, color: Colors.greenAccent, size: 16),
               SizedBox(width: 8),
-              Text('Code Editor', style: TextStyle(color: Colors.greenAccent,
-                  fontFamily: 'monospace', fontSize: 13, fontWeight: FontWeight.w600)),
+              Text('Code Editor',
+                  style: TextStyle(
+                      color: Colors.greenAccent,
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
             ]),
           ),
           TextField(
             controller: ctrl,
             maxLines: 12,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13, color: AppColors.textDark),
+            style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 13,
+                color: AppColors.textDark),
             onChanged: (val) => setState(() => _answers[qId] = val),
             decoration: InputDecoration(
               hintText: '// Write your code here...',
-              hintStyle: const TextStyle(fontFamily: 'monospace', color: Colors.grey, fontSize: 13),
+              hintStyle: const TextStyle(
+                  fontFamily: 'monospace', color: Colors.grey, fontSize: 13),
               filled: true,
-              fillColor: TC.isDark(context) ? const Color(0xFF1A1A2E) : const Color(0xFFF4F4FB),
+              fillColor: TC.isDark(context)
+                  ? const Color(0xFF1A1A2E)
+                  : const Color(0xFFF4F4FB),
               border: const OutlineInputBorder(
-                borderRadius: BorderRadius.only(bottomLeft: Radius.circular(14), bottomRight: Radius.circular(14)),
+                borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(14),
+                    bottomRight: Radius.circular(14)),
                 borderSide: BorderSide.none,
               ),
               focusedBorder: const OutlineInputBorder(
-                borderRadius: BorderRadius.only(bottomLeft: Radius.circular(14), bottomRight: Radius.circular(14)),
+                borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(14),
+                    bottomRight: Radius.circular(14)),
                 borderSide: BorderSide(color: AppColors.primary, width: 2),
               ),
               contentPadding: const EdgeInsets.all(16),
@@ -849,7 +806,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                 const Icon(Icons.check_circle, size: 13, color: AppColors.correct),
                 const SizedBox(width: 4),
                 Text(
-                  '${currentAnswer.trim().split('\n').length} line${currentAnswer.trim().split('\n').length == 1 ? '' : 's'} written',
+                  '${currentAnswer.trim().split('\n').length} '
+                      'line${currentAnswer.trim().split('\n').length == 1 ? '' : 's'} written',
                   style: const TextStyle(fontSize: 12, color: AppColors.correct),
                 ),
               ]),
@@ -860,6 +818,44 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         return const SizedBox();
     }
   }
+}
+
+// ── Pulsing icon widget (used when timer is critical ≤30s) ────────────────────
+
+class _PulsingIcon extends StatefulWidget {
+  final Color color;
+  const _PulsingIcon({required this.color});
+
+  @override
+  State<_PulsingIcon> createState() => _PulsingIconState();
+}
+
+class _PulsingIconState extends State<_PulsingIcon>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600))
+      ..repeat(reverse: true);
+    _anim = Tween<double>(begin: 0.6, end: 1.0)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+    opacity: _anim,
+    child: Icon(Icons.timer_off_rounded, color: widget.color, size: 20),
+  );
 }
 
 // ── Helper widgets ─────────────────────────────────────────────────────────────
@@ -877,7 +873,9 @@ class _NavButton extends StatelessWidget {
       width: 40, height: 40,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: enabled ? AppColors.primary.withValues(alpha: 0.12) : Colors.grey.shade100,
+        color: enabled
+            ? AppColors.primary.withValues(alpha: 0.12)
+            : Colors.grey.shade100,
       ),
       child: Icon(icon, size: 18,
           color: enabled ? AppColors.primary : Colors.grey.shade300),
@@ -890,11 +888,14 @@ class _EmptyChoicesHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(color: AppColors.cardBg, borderRadius: BorderRadius.circular(14)),
+    decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14)),
     child: const Row(children: [
       Icon(Icons.warning_amber_rounded, color: Colors.orange),
       SizedBox(width: 10),
-      Text('No choices available for this question.', style: TextStyle(color: Colors.grey)),
+      Text('No choices available for this question.',
+          style: TextStyle(color: Colors.grey)),
     ]),
   );
 }

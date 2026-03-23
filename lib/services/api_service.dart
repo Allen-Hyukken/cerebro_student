@@ -8,7 +8,8 @@ import 'package:quiz_app/services/xp_service.dart';
 
 class ApiService {
   static const String _prefKey    = 'server_url';
-  static const String _defaultUrl = 'http://192.168.1.5:5000/api';
+  static const String _defaultUrl =
+      'https://backend-production-59548.up.railway.app/api';
   static String? _cachedBaseUrl;
 
   static Future<String> get baseUrl async {
