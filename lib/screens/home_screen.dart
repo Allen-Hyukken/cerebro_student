@@ -14,6 +14,7 @@ import 'package:quiz_app/screens/history_screen.dart';
 import 'package:quiz_app/widgets/user_avatar.dart';
 import 'package:quiz_app/screens/memory_game_screen.dart';
 import 'package:quiz_app/screens/profile_screen.dart';
+import 'package:quiz_app/screens/dashboard_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -340,8 +341,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           const SizedBox(height: 8),
 
                           Flexible(child: SingleChildScrollView(child: Column(children: [
+                            // ── Home → Dashboard (personal overview) ──────
                             _DrawerItem(Icons.home_outlined, 'Home', () {
                               _closeDrawer();
+                              Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => const DashboardScreen(),
+                              ));
+                            }),
+                            // ── My Classrooms → stays on this screen ──────
+                            _DrawerItem(Icons.book_outlined, 'My Classrooms', () {
+                              _closeDrawer();
+                              // Already on the classrooms screen — just refresh
                               ref.read(classroomsProvider.notifier).reload();
                             }),
                             _DrawerItem(Icons.history_edu, 'Quiz History', () {
