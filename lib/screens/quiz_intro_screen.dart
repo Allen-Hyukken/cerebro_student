@@ -31,11 +31,10 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
   bool _deadlinePassed   = false;
   List<QuestionModel> _questions = [];
   bool _isLoading = true;
-  String? _loadError;
 
-  // Fresh quiz data fetched from the server (has up-to-date deadline)
-  QuizModel? _freshQuiz;
-  QuizModel get _quiz => _freshQuiz ?? widget.quiz;
+  // Student's score when already submitted
+  double? _myScore;
+  double? _myTotalPoints;
 
   @override
   void initState() {
@@ -62,63 +61,62 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
     _loadQuiz();
   }
 
-  /// Always fetches fresh quiz data from the server so that:
-  ///   • Updated deadlines are reflected immediately
-  ///   • Already-submitted state is checked against the real server attempt list
   Future<void> _loadQuiz() async {
-    if (mounted) setState(() { _isLoading = true; _loadError = null; });
-
+    if (mounted) setState(() => _isLoading = true);
     try {
-      // ── 1. Fetch fresh quiz detail from server ─────────────────────────
-      // This gives us the up-to-date deadline set by the teacher.
-      final data = await ApiService.getQuizDetail(widget.quiz.id);
+      final deadlinePassed = widget.quiz.isDeadlinePassed;
 
-      // Build a fresh QuizModel from the server response
-      final freshQuiz = QuizModel.fromJson(data);
+      // ── Check already submitted + fetch the student's score ───────────
+      bool alreadySubmitted = false;
+      double? myScore;
+      double? myTotalPoints;
 
-      // ── 2. Parse questions ─────────────────────────────────────────────
+      try {
+        final attempts = await ApiService.getMyAttempts();
+        // Find the attempt that matches this quiz
+        Map<String, dynamic>? match;
+        for (final a in attempts) {
+          final id = a['quizId'] ?? a['quiz_id'];
+          if (id != null && id.toString() == widget.quiz.id.toString()) {
+            match = a;
+            break;
+          }
+        }
+        if (match != null) {
+          alreadySubmitted = true;
+          myScore       = (match['score']       ?? 0).toDouble();
+          myTotalPoints = (match['totalPoints'] ?? widget.quiz.totalPoints).toDouble();
+          if (ApiService.userId != null) {
+            await ApiService.markSubmittedLocally(widget.quiz.id, ApiService.userId!);
+          }
+        }
+      } catch (_) {
+        // Server unreachable — fall back to local lock
+        alreadySubmitted = await ApiService.hasSubmittedQuiz(widget.quiz.id);
+      }
+
+      // ── Load questions ────────────────────────────────────────────────
+      final data      = await ApiService.getQuizDetail(widget.quiz.id);
       final questions = (data['questions'] as List? ?? [])
           .map((q) => QuestionModel.fromJson(q))
           .toList();
 
-      // ── 3. Check deadline using the FRESH data from server ─────────────
-      final deadlinePassed = freshQuiz.isDeadlinePassed;
-
-      // ── 4. Check already-submitted — server is the source of truth ─────
-      bool alreadySubmitted = false;
-      try {
-        final attempts = await ApiService.getMyAttempts();
-        alreadySubmitted = attempts.any((a) {
-          final id = a['quizId'] ?? a['quiz_id'];
-          return id != null && id.toString() == widget.quiz.id.toString();
-        });
-        // Sync local cache so offline checks are consistent
-        if (alreadySubmitted && ApiService.userId != null) {
-          await ApiService.markSubmittedLocally(widget.quiz.id, ApiService.userId!);
-        }
-      } catch (_) {
-        // If server unreachable, fall back to local SQLite cache
-        alreadySubmitted = await ApiService.hasSubmittedQuiz(widget.quiz.id);
-      }
-
       if (!mounted) return;
       setState(() {
-        _freshQuiz        = freshQuiz;
-        _questions        = questions;
         _alreadySubmitted = alreadySubmitted;
         _deadlinePassed   = deadlinePassed;
+        _myScore          = myScore;
+        _myTotalPoints    = myTotalPoints ?? widget.quiz.totalPoints;
+        _questions        = questions;
         _isLoading        = false;
       });
     } catch (e) {
       if (!mounted) return;
-      // On error, fall back to the quiz passed in from the parent screen
-      // and try a local submitted check so we don't block a taken quiz
-      bool alreadySubmitted = await ApiService.hasSubmittedQuiz(widget.quiz.id);
+      final alreadySubmitted = await ApiService.hasSubmittedQuiz(widget.quiz.id);
       setState(() {
-        _deadlinePassed   = widget.quiz.isDeadlinePassed;
         _alreadySubmitted = alreadySubmitted;
+        _deadlinePassed   = widget.quiz.isDeadlinePassed;
         _isLoading        = false;
-        _loadError        = 'Could not refresh quiz info. Showing cached data.';
       });
     }
   }
@@ -150,7 +148,7 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
 
     Navigator.pushReplacement(context, PageRouteBuilder(
       pageBuilder: (_, animation, __) =>
-          QuizScreen(quiz: _quiz, questions: _questions),
+          QuizScreen(quiz: widget.quiz, questions: _questions),
       transitionsBuilder: (_, animation, __, child) => SlideTransition(
         position: Tween<Offset>(begin: const Offset(1.0, 0), end: Offset.zero)
             .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
@@ -175,6 +173,11 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
     return 'Due very soon!';
   }
 
+  /// Formats a double cleanly — removes trailing .0
+  /// 18.0 → "18",  14.5 → "14.5"
+  String _fmt(double v) =>
+      v == v.truncateToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -195,15 +198,12 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
   }
 
   Widget _buildIntro() {
-    final quiz     = _quiz;
+    final quiz     = widget.quiz;
     final deadline = quiz.deadlineDateTime;
 
-    // Wrap everything in a scrollable so nothing overflows on small screens
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: ConstrainedBox(
-        // Ensure the column is at least as tall as the screen so the
-        // button always sits at the bottom even on short content
         constraints: BoxConstraints(
           minHeight: MediaQuery.of(context).size.height -
               MediaQuery.of(context).padding.top -
@@ -221,20 +221,21 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
               IconButton(
                   icon: const Icon(Icons.leaderboard, color: AppColors.primary),
                   tooltip: 'Leaderboard',
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => LeaderboardScreen(quiz: quiz)))),
+                  onPressed: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => LeaderboardScreen(quiz: quiz)))),
             ]),
 
             const SizedBox(height: 20),
 
-            // ── Banner ───────────────────────────────────────────────────
+            // ── Banner ────────────────────────────────────────────────────
             Container(
               width: double.infinity, height: 180,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24),
                 gradient: const LinearGradient(
                     colors: [AppColors.primary, AppColors.darkCard],
-                    begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight),
                 boxShadow: [BoxShadow(
                     color: AppColors.primary.withValues(alpha: 0.35),
                     blurRadius: 20, offset: const Offset(0, 8))],
@@ -278,13 +279,17 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
 
             const SizedBox(height: 24),
 
-            // ── Stats chips ──────────────────────────────────────────────
+            // ── Stats chips ────────────────────────────────────────────────
+            // Points: uses filled star icon + amber colour + clean number (no .0)
             Row(children: [
-              _StatChip(icon: Icons.quiz_outlined,
+              _StatChip(
+                  icon: Icons.quiz_outlined,
                   label: '${quiz.questionCount} Questions'),
               const SizedBox(width: 12),
-              _StatChip(icon: Icons.star_outline,
-                  label: '${quiz.totalPoints} Points'),
+              _StatChip(
+                  icon: Icons.star_rounded,
+                  label: '${_fmt(quiz.totalPoints)} pts',
+                  color: Colors.amber.shade600),
               const SizedBox(width: 12),
               quiz.timeLimitMinutes != null
                   ? _StatChip(
@@ -295,7 +300,13 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
                   icon: Icons.redo_outlined, label: 'No Limit'),
             ]),
 
-            // ── Deadline banner ──────────────────────────────────────────
+            // ── Score card (only when student already submitted) ───────────
+            if (_alreadySubmitted && _myScore != null) ...[
+              const SizedBox(height: 12),
+              _buildScoreCard(),
+            ],
+
+            // ── Deadline banner ────────────────────────────────────────────
             if (deadline != null) ...[
               const SizedBox(height: 12),
               Container(
@@ -316,7 +327,6 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
                         : AppColors.primary.withValues(alpha: 0.3),
                   ),
                 ),
-                // Use Row + flexible text so nothing overflows horizontally
                 child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Icon(
                     _deadlinePassed ? Icons.timer_off : Icons.calendar_today,
@@ -338,7 +348,6 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        // Fixed: use padded 2-digit month/day so it never wraps unexpectedly
                         '${deadline.month.toString().padLeft(2, '0')}/'
                             '${deadline.day.toString().padLeft(2, '0')}/'
                             '${deadline.year}  '
@@ -353,38 +362,9 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
               ),
             ],
 
-            // ── Stale-data notice (shown when server fetch failed) ────────
-            if (_loadError != null) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
-                ),
-                child: Row(children: [
-                  const Icon(Icons.wifi_off, size: 14, color: Colors.orange),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(_loadError!,
-                      style: const TextStyle(fontSize: 11, color: Colors.orange))),
-                  GestureDetector(
-                    onTap: _loadQuiz,
-                    child: const Text('Retry',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.orange,
-                            fontWeight: FontWeight.bold,
-                            decoration: TextDecoration.underline)),
-                  ),
-                ]),
-              ),
-            ],
-
             const SizedBox(height: 24),
 
-            // ── Instructions card ────────────────────────────────────────
+            // ── Instructions card ──────────────────────────────────────────
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -413,7 +393,9 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
                     icon: Icons.send_outlined,
                     text: 'Submit on the last question when ready.'),
                 const SizedBox(height: 10),
-
+                _InstructionRow(
+                    icon: Icons.edit_outlined,
+                    text: 'MCQ, True/False, Essay, Identification & Coding.'),
                 if (quiz.timeLimitMinutes != null) ...[
                   const SizedBox(height: 10),
                   _InstructionRow(
@@ -427,7 +409,7 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
 
             const SizedBox(height: 28),
 
-            // ── Start / status button ────────────────────────────────────
+            // ── Action button ──────────────────────────────────────────────
             _buildActionButton(),
 
             const SizedBox(height: 28),
@@ -437,8 +419,102 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
     );
   }
 
-  /// Builds the correct bottom button depending on current state.
-  /// Priority: loading → already submitted → deadline passed → start
+  // ── Score card shown when student already submitted ────────────────────────
+  Widget _buildScoreCard() {
+    final score   = _myScore ?? 0;
+    final total   = _myTotalPoints ?? widget.quiz.totalPoints;
+    final percent = total > 0 ? (score / total * 100).round() : 0;
+
+    final Color color = percent >= 75
+        ? AppColors.correct
+        : percent >= 50
+        ? Colors.orange
+        : AppColors.wrong;
+
+    final IconData trophy = percent >= 75
+        ? Icons.emoji_events_rounded
+        : percent >= 50
+        ? Icons.thumb_up_rounded
+        : Icons.sentiment_neutral_rounded;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(children: [
+
+        // Percentage circle
+        Container(
+          width: 56, height: 56,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color.withValues(alpha: 0.12),
+            border: Border.all(color: color, width: 2),
+          ),
+          child: Center(
+            child: Text('$percent%',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: color)),
+          ),
+        ),
+
+        const SizedBox(width: 16),
+
+        // Score text + bar
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Your Score',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: TC.subText(context),
+                    fontWeight: FontWeight.w500)),
+            const SizedBox(height: 4),
+            // e.g.  "14 / 18 pts"
+            RichText(
+              text: TextSpan(children: [
+                TextSpan(
+                  text: _fmt(score),
+                  style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: color),
+                ),
+                TextSpan(
+                  text: ' / ${_fmt(total)} pts',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: TC.subText(context)),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: total > 0 ? (score / total).clamp(0.0, 1.0) : 0,
+                minHeight: 5,
+                backgroundColor: color.withValues(alpha: 0.15),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+          ]),
+        ),
+
+        const SizedBox(width: 12),
+
+        // Trophy / result icon
+        Icon(trophy, color: color, size: 32),
+      ]),
+    );
+  }
+
   Widget _buildActionButton() {
     if (_isLoading) {
       return Column(children: [
@@ -449,7 +525,6 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
       ]);
     }
 
-    // ── Already submitted — highest priority, show even if deadline passed ──
     if (_alreadySubmitted) {
       return _statusButton(
         icon: Icons.check_circle_outline,
@@ -458,7 +533,6 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
       );
     }
 
-    // ── Deadline passed ────────────────────────────────────────────────────
     if (_deadlinePassed) {
       return _statusButton(
         icon: Icons.timer_off,
@@ -467,7 +541,6 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
       );
     }
 
-    // ── Questions not yet loaded (error state) — show retry ───────────────
     if (_questions.isEmpty) {
       return SizedBox(
         width: double.infinity,
@@ -485,7 +558,6 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
       );
     }
 
-    // ── Ready to start ─────────────────────────────────────────────────────
     return AnimatedBuilder(
       animation: _pulseAnim,
       builder: (_, child) => Transform.scale(scale: _pulseAnim.value, child: child),
@@ -587,7 +659,7 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
           const SizedBox(height: 40),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(_quiz.title,
+            child: Text(widget.quiz.title,
                 style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -595,11 +667,11 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
                 textAlign: TextAlign.center),
           ),
           const SizedBox(height: 8),
-          Text('${_quiz.questionCount} questions',
+          Text('${widget.quiz.questionCount} questions',
               style: TextStyle(fontSize: 14, color: TC.subText(context))),
-          if (_quiz.timeLimitMinutes != null) ...[
+          if (widget.quiz.timeLimitMinutes != null) ...[
             const SizedBox(height: 6),
-            Text('${_quiz.timeLimitMinutes} minute time limit',
+            Text('${widget.quiz.timeLimitMinutes} minute time limit',
                 style: const TextStyle(
                     fontSize: 13,
                     color: Colors.orange,
