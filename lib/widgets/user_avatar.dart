@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:quiz_app/services/api_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:quiz_app/providers/xp_provider.dart';
 import 'package:quiz_app/services/xp_service.dart';
 import 'package:quiz_app/theme/app_theme.dart';
 
-/// Shared avatar widget — shows emoji avatar or initials fallback
-/// Used in drawer, leaderboard, profile, etc.
-class UserAvatar extends StatefulWidget {
+// ── Current-user avatar ───────────────────────────────────────────────────────
+
+/// Shows the logged-in user's emoji avatar (driven by [xpProvider]).
+class UserAvatar extends ConsumerWidget {
   final double size;
   final Color? borderColor;
   final double borderWidth;
@@ -18,45 +20,33 @@ class UserAvatar extends StatefulWidget {
   });
 
   @override
-  State<UserAvatar> createState() => _UserAvatarState();
-}
-
-class _UserAvatarState extends State<UserAvatar> {
-  int _avatarIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final idx = await XpService().getAvatarIndex(ApiService.userId ?? 0);
-    if (mounted) setState(() => _avatarIndex = idx);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final emoji    = XpService.avatarEmojis[_avatarIndex];
-    final fontSize = widget.size * 0.48;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final xpState = ref.watch(xpProvider);
+    final emoji   = xpState.emoji;
 
     return Container(
-      width: widget.size, height: widget.size,
+      width: size, height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: AppColors.primary.withValues(alpha: 0.15),
         border: Border.all(
-            color: widget.borderColor ?? AppColors.primary,
-            width: widget.borderWidth),
+          color: borderColor ?? AppColors.primary,
+          width: borderWidth,
+        ),
       ),
-      child: Center(child: Text(emoji, style: TextStyle(fontSize: fontSize))),
+      child: Center(
+        child: Text(emoji, style: TextStyle(fontSize: size * 0.48)),
+      ),
     );
   }
 }
 
-/// Static version for leaderboard rows (uses a known userId + name)
-class PlayerAvatar extends StatefulWidget {
-  final int userId;
+// ── Arbitrary-player avatar (used in leaderboard rows) ───────────────────────
+
+/// Shows emoji if the player has a custom avatar, otherwise coloured initials.
+/// Uses [playerAvatarProvider] (auto-dispose family) to load per-userId.
+class PlayerAvatar extends ConsumerWidget {
+  final int    userId;
   final String name;
   final double size;
 
@@ -67,63 +57,59 @@ class PlayerAvatar extends StatefulWidget {
     this.size = 42,
   });
 
-  @override
-  State<PlayerAvatar> createState() => _PlayerAvatarState();
-}
-
-class _PlayerAvatarState extends State<PlayerAvatar> {
-  int _avatarIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final idx = await XpService().getAvatarIndex(widget.userId);
-    if (mounted) setState(() => _avatarIndex = idx);
-  }
-
   String get _initials {
-    final parts = widget.name.trim().split(' ');
+    final parts = name.trim().split(' ');
     if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     return parts[0].isNotEmpty ? parts[0][0].toUpperCase() : '?';
   }
 
   Color get _color {
-    final colors = [AppColors.primary, AppColors.correct, AppColors.wrong,
-      Colors.orange, Colors.purple, Colors.teal, Colors.indigo];
-    return colors[widget.userId % colors.length];
+    const colors = [
+      AppColors.primary, AppColors.correct, AppColors.wrong,
+      Colors.orange,     Colors.purple,     Colors.teal,     Colors.indigo,
+    ];
+    return colors[userId % colors.length];
   }
 
   @override
-  Widget build(BuildContext context) {
-    // If user has customized avatar (index > 0), show emoji
-    // Otherwise show colored initials
-    if (_avatarIndex > 0) {
-      final emoji = XpService.avatarEmojis[_avatarIndex];
+  Widget build(BuildContext context, WidgetRef ref) {
+    final avatarAsync = ref.watch(playerAvatarProvider(userId));
+    final avatarIndex = avatarAsync.valueOrNull ?? 0;
+
+    if (avatarIndex > 0) {
+      final emoji = XpService.avatarEmojis[avatarIndex];
       return Container(
-        width: widget.size, height: widget.size,
+        width: size, height: size,
         decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: _color.withValues(alpha: 0.15),
-            border: Border.all(color: _color.withValues(alpha: 0.4))),
-        child: Center(child: Text(emoji,
-            style: TextStyle(fontSize: widget.size * 0.48))),
+          shape: BoxShape.circle,
+          color: _color.withValues(alpha: 0.15),
+          border: Border.all(color: _color.withValues(alpha: 0.4)),
+        ),
+        child: Center(
+          child: Text(emoji, style: TextStyle(fontSize: size * 0.48)),
+        ),
       );
     }
 
-    // Default: colored initials
+    // Default: coloured initials
     return Container(
-      width: widget.size, height: widget.size,
+      width: size, height: size,
       decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _color,
-          boxShadow: [BoxShadow(color: _color.withValues(alpha: 0.3), blurRadius: 6)]),
-      child: Center(child: Text(_initials,
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold,
-              fontSize: widget.size * 0.35))),
+        shape: BoxShape.circle,
+        color: _color,
+        boxShadow: [BoxShadow(
+          color: _color.withValues(alpha: 0.3), blurRadius: 6,
+        )],
+      ),
+      child: Center(
+        child: Text(
+          _initials,
+          style: TextStyle(
+            color: Colors.white, fontWeight: FontWeight.bold,
+            fontSize: size * 0.35,
+          ),
+        ),
+      ),
     );
   }
 }

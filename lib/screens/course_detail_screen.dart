@@ -1,102 +1,128 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:quiz_app/theme/app_theme.dart';
 import 'package:quiz_app/models/quiz_model.dart';
 import 'package:quiz_app/services/api_service.dart';
+import 'package:quiz_app/providers/quizzes_provider.dart';
 import 'package:quiz_app/screens/quiz_intro_screen.dart';
 
-class CourseDetailScreen extends StatefulWidget {
+class CourseDetailScreen extends ConsumerWidget {
   final ClassroomModel classroom;
   const CourseDetailScreen({super.key, required this.classroom});
-  @override
-  State<CourseDetailScreen> createState() => _CourseDetailScreenState();
-}
-
-class _CourseDetailScreenState extends State<CourseDetailScreen> {
-  List<QuizModel> _quizzes = [];
-  bool _isLoading = true;
-  String? _error;
 
   @override
-  void initState() { super.initState(); _loadQuizzes(); }
+  Widget build(BuildContext context, WidgetRef ref) {
+    final quizzesAsync = ref.watch(classroomQuizzesProvider(classroom.id));
 
-  Future<void> _loadQuizzes() async {
-    setState(() { _isLoading = true; _error = null; });
-    try {
-      final data = await ApiService.getClassroomQuizzes(widget.classroom.id);
-      setState(() => _quizzes = data.map((j) => QuizModel.fromJson(j)).toList());
-    } catch (e) {
-      setState(() => _error = 'Failed to load quizzes.');
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TC.bg(context),
       body: SafeArea(
         child: Column(children: [
-          // Top bar
+          // ── Top bar ───────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             child: Row(children: [
-              IconButton(icon: Icon(Icons.arrow_back, color: TC.text(context)), onPressed: () => Navigator.pop(context)),
+              IconButton(
+                icon: Icon(Icons.arrow_back, color: TC.text(context)),
+                onPressed: () => Navigator.pop(context),
+              ),
               const Spacer(),
               Container(
                 width: 38, height: 38,
-                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.primary, width: 2), color: TC.surface(context)),
-                child: ClipOval(child: Image.asset('assets/icons/logo.png', fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.psychology, size: 20, color: AppColors.primary))),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.primary, width: 2),
+                  color: TC.surface(context),
+                ),
+                child: ClipOval(child: Image.asset(
+                  'assets/icons/logo.png', fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.psychology, size: 20, color: AppColors.primary,
+                  ),
+                )),
               ),
               const SizedBox(width: 12),
             ]),
           ),
 
-          // Classroom header card
+          // ── Classroom header card ─────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Container(
               height: 150,
               decoration: BoxDecoration(
-                  color: TC.card(context),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.10), blurRadius: 10, offset: const Offset(0, 4))]),
+                color: TC.card(context),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.10),
+                  blurRadius: 10, offset: const Offset(0, 4),
+                )],
+              ),
               child: LayoutBuilder(builder: (context, constraints) {
                 final half = constraints.maxWidth / 2;
                 return Row(children: [
-                  SizedBox(width: half,
+                  SizedBox(
+                    width: half,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                        Text(widget.classroom.name,
-                            style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18),
-                            overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 10),
-                        Row(children: [
-                          Icon(Icons.tag, size: 14, color: TC.subText(context)),
-                          const SizedBox(width: 4),
-                          Text('Code: ${widget.classroom.code}', style: TextStyle(color: TC.subText(context), fontSize: 13)),
-                        ]),
-                        const SizedBox(height: 5),
-                        Row(children: [
-                          const Icon(Icons.person_outline, size: 14, color: AppColors.primary),
-                          const SizedBox(width: 4),
-                          Flexible(child: Text('Teacher: ${widget.classroom.teacherName ?? ""}',
-                              style: const TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w500),
-                              overflow: TextOverflow.ellipsis)),
-                        ]),
-                      ]),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 18,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            classroom.name,
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.bold, fontSize: 18,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 10),
+                          Row(children: [
+                            Icon(Icons.tag, size: 14,
+                                color: TC.subText(context)),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Code: ${classroom.code}',
+                              style: TextStyle(
+                                color: TC.subText(context), fontSize: 13,
+                              ),
+                            ),
+                          ]),
+                          const SizedBox(height: 5),
+                          Row(children: [
+                            const Icon(Icons.person_outline,
+                                size: 14, color: AppColors.primary),
+                            const SizedBox(width: 4),
+                            Flexible(child: Text(
+                              'Teacher: ${classroom.teacherName ?? ""}',
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 13, fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            )),
+                          ]),
+                        ],
+                      ),
                     ),
                   ),
                   ClipRRect(
-                    borderRadius: const BorderRadius.only(topRight: Radius.circular(20), bottomRight: Radius.circular(20)),
-                    child: widget.classroom.hasBanner && ApiService.token != null
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(20),
+                      bottomRight: Radius.circular(20),
+                    ),
+                    child: classroom.hasBanner && ApiService.token != null
                         ? Image.network(
-                      ApiService.getBannerUrlSync(widget.classroom.id),
+                      ApiService.getBannerUrlSync(classroom.id),
                       width: half, height: 150, fit: BoxFit.cover,
-                      headers: {'Authorization': 'Bearer ${ApiService.token}'},
-                      errorBuilder: (_, __, ___) => _gradientBox(half),
+                      headers: {
+                        'Authorization': 'Bearer ${ApiService.token}',
+                      },
+                      errorBuilder: (_, __, ___) =>
+                          _gradientBox(half),
                     )
                         : _gradientBox(half),
                   ),
@@ -107,40 +133,82 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
           const SizedBox(height: 16),
 
-          // Quiz grid
-          Expanded(child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-              : _error != null
-              ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.wifi_off, color: TC.subText(context), size: 48),
-            const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: TC.subText(context))),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: _loadQuizzes,
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
-                child: const Text('Retry')),
-          ]))
-              : _quizzes.isEmpty
-              ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.quiz_outlined, color: TC.subText(context), size: 64),
-            const SizedBox(height: 16),
-            Text('No quizzes yet.', style: TextStyle(color: TC.subText(context), fontSize: 16)),
-          ]))
-              : RefreshIndicator(
-            onRefresh: _loadQuizzes,
-            child: GridView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.3),
-              itemCount: _quizzes.length,
-              itemBuilder: (context, index) {
-                final quiz = _quizzes[index];
-                return _QuizCard(quiz: quiz,
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => QuizIntroScreen(quiz: quiz))));
-              },
+          // ── Quiz grid ─────────────────────────────────────────────────────
+          Expanded(
+            child: quizzesAsync.when(
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              ),
+              error: (err, _) => Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.wifi_off, color: TC.subText(context), size: 48),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Failed to load quizzes.',
+                      style: TextStyle(color: TC.subText(context)),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => ref
+                          .read(classroomQuizzesProvider(classroom.id).notifier)
+                          .reload(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+              data: (quizzes) => quizzes.isEmpty
+                  ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.quiz_outlined,
+                        color: TC.subText(context), size: 64),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No quizzes yet.',
+                      style: TextStyle(
+                        color: TC.subText(context), fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+                  : RefreshIndicator(
+                onRefresh: () => ref
+                    .read(classroomQuizzesProvider(classroom.id).notifier)
+                    .reload(),
+                child: GridView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 1.3,
+                  ),
+                  itemCount: quizzes.length,
+                  itemBuilder: (context, index) {
+                    final quiz = quizzes[index];
+                    return _QuizCard(
+                      quiz: quiz,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => QuizIntroScreen(quiz: quiz),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
-          ),
           ),
         ]),
       ),
@@ -150,14 +218,19 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   Widget _gradientBox(double width) => Container(
     width: width, height: 150,
     decoration: const BoxDecoration(
-        gradient: LinearGradient(colors: [AppColors.primary, AppColors.darkCard],
-            begin: Alignment.topLeft, end: Alignment.bottomRight)),
+      gradient: LinearGradient(
+        colors: [AppColors.primary, AppColors.darkCard],
+        begin: Alignment.topLeft, end: Alignment.bottomRight,
+      ),
+    ),
     child: const Icon(Icons.school, color: Colors.white54, size: 60),
   );
 }
 
+// ── Quiz card ─────────────────────────────────────────────────────────────────
+
 class _QuizCard extends StatelessWidget {
-  final QuizModel quiz;
+  final QuizModel    quiz;
   final VoidCallback onTap;
   const _QuizCard({required this.quiz, required this.onTap});
 
@@ -166,25 +239,43 @@ class _QuizCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        decoration: BoxDecoration(color: TC.card(context), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(
+          color: TC.card(context),
+          borderRadius: BorderRadius.circular(14),
+        ),
         padding: const EdgeInsets.all(14),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-          Text(quiz.title,
-              style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 15),
-              overflow: TextOverflow.ellipsis, maxLines: 2),
-          const SizedBox(height: 8),
-          Row(children: [
-            Icon(Icons.quiz_outlined, size: 14, color: TC.subText(context)),
-            const SizedBox(width: 4),
-            Text('${quiz.questionCount} Questions', style: TextStyle(color: TC.subText(context), fontSize: 12)),
-          ]),
-          const SizedBox(height: 4),
-          Row(children: [
-            Icon(Icons.star_outline, size: 14, color: TC.subText(context)),
-            const SizedBox(width: 4),
-            Text('${quiz.totalPoints} pts', style: TextStyle(color: TC.subText(context), fontSize: 12)),
-          ]),
-        ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              quiz.title,
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.bold, fontSize: 15,
+              ),
+              overflow: TextOverflow.ellipsis, maxLines: 2,
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              Icon(Icons.quiz_outlined, size: 14, color: TC.subText(context)),
+              const SizedBox(width: 4),
+              Text(
+                '${quiz.questionCount} Questions',
+                style: TextStyle(color: TC.subText(context), fontSize: 12),
+              ),
+            ]),
+            const SizedBox(height: 4),
+            Row(children: [
+              Icon(Icons.star_outline, size: 14, color: TC.subText(context)),
+              const SizedBox(width: 4),
+              Text(
+                '${quiz.totalPoints} pts',
+                style: TextStyle(color: TC.subText(context), fontSize: 12),
+              ),
+            ]),
+          ],
+        ),
       ),
     );
   }
