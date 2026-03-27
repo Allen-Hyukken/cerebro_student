@@ -342,7 +342,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
                           Flexible(child: SingleChildScrollView(child: Column(children: [
                             // ── Home → Dashboard (personal overview) ──────
-                            _DrawerItem(Icons.home_outlined, 'Home', () {
+                            _DrawerItem(Icons.home_outlined, 'Dashboard', () {
                               _closeDrawer();
                               Navigator.push(context, MaterialPageRoute(
                                 builder: (_) => const DashboardScreen(),
