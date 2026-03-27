@@ -393,9 +393,7 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
                     icon: Icons.send_outlined,
                     text: 'Submit on the last question when ready.'),
                 const SizedBox(height: 10),
-                _InstructionRow(
-                    icon: Icons.edit_outlined,
-                    text: 'MCQ, True/False, Essay, Identification & Coding.'),
+
                 if (quiz.timeLimitMinutes != null) ...[
                   const SizedBox(height: 10),
                   _InstructionRow(
