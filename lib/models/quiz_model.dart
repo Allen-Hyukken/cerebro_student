@@ -2,12 +2,17 @@
 // Works with both API (JSON) and SQLite (local cache) responses
 
 class UserModel {
-  final int id;
+  final int    id;
   final String name;
   final String email;
   final String role;
 
-  UserModel({required this.id, required this.name, required this.email, required this.role});
+  const UserModel({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.role,
+  });
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
     id:    _parseInt(j['id']),
@@ -18,22 +23,22 @@ class UserModel {
 }
 
 class ClassroomModel {
-  final int id;
-  final String name;
-  final String code;
+  final int     id;
+  final String  name;
+  final String  code;
   final String? teacherName;
-  final int quizCount;
-  final int studentCount;
-  final bool hasBanner;
+  final int     quizCount;
+  final int     studentCount;
+  final bool    hasBanner;
 
-  ClassroomModel({
+  const ClassroomModel({
     required this.id,
     required this.name,
     required this.code,
     this.teacherName,
-    this.quizCount = 0,
+    this.quizCount    = 0,
     this.studentCount = 0,
-    this.hasBanner = false,
+    this.hasBanner    = false,
   });
 
   factory ClassroomModel.fromJson(Map<String, dynamic> j) => ClassroomModel(
@@ -48,110 +53,115 @@ class ClassroomModel {
 }
 
 class QuizModel {
-  final int id;
-  final String title;
+  final int     id;
+  final String  title;
   final String? description;
-  final int classRoomId;
+  final int     classRoomId;
   final String? classRoomName;
   final String? teacherName;
-  final int questionCount;
-  final double totalPoints;
+  final int     questionCount;
+  final double  totalPoints;
   final String? createdAt;
 
-  // ── Teacher-set controls ───────────────────────────────────────────────────
   /// Minutes the student has after opening the quiz. null = no limit.
   final int? timeLimitMinutes;
 
-  /// ISO-8601 deadline string. null = no deadline.
+  /// ISO-8601 deadline string from the server (assumed UTC if no tz offset).
   final String? deadline;
 
-  /// When true, the student can see the correct/wrong answer breakdown
-  /// on the result and review screens after submitting.
+  /// When true, the student can see the correct/wrong breakdown after submitting.
   final bool showAnswers;
 
-  QuizModel({
+  const QuizModel({
     required this.id,
     required this.title,
     this.description,
     required this.classRoomId,
     this.classRoomName,
     this.teacherName,
-    this.questionCount = 0,
-    this.totalPoints = 0,
+    this.questionCount    = 0,
+    this.totalPoints      = 0,
     this.createdAt,
     this.timeLimitMinutes,
     this.deadline,
-    this.showAnswers = false,
+    this.showAnswers      = false,
   });
 
-  /// Returns the parsed deadline as a local [DateTime], or null.
+  /// Parses [deadline] as UTC when no timezone info is present,
+  /// then converts to the device's local timezone.
   DateTime? get deadlineDateTime {
     if (deadline == null) return null;
     try {
-      return DateTime.parse(deadline!).toLocal();
+      final s = deadline!.trim();
+      // If the string already carries timezone info (Z, +, or a negative
+      // offset after the date part), parse as-is; otherwise append 'Z'
+      // so the server's naive UTC timestamps are treated correctly.
+      final hasOffset = s.endsWith('Z') ||
+          s.contains('+') ||
+          (s.length > 10 && RegExp(r'T\d{2}:\d{2}.*-\d{2}').hasMatch(s));
+      return DateTime.parse(hasOffset ? s : '${s}Z').toLocal();
     } catch (_) {
       return null;
     }
   }
 
-  /// True when the quiz deadline has already passed.
+  /// True when the quiz deadline has already passed (compared in local time).
   bool get isDeadlinePassed {
     final dt = deadlineDateTime;
-    if (dt == null) return false;
-    return DateTime.now().isAfter(dt);
+    return dt != null && DateTime.now().isAfter(dt);
   }
 
   factory QuizModel.fromJson(Map<String, dynamic> j) => QuizModel(
-    id:                _parseInt(j['id']),
-    title:             j['title']         ?? '',
-    description:       j['description'],
-    classRoomId:       _parseInt(j['classRoomId']),
-    classRoomName:     j['classRoomName'],
-    teacherName:       j['teacherName'],
-    questionCount:     _parseInt(j['questionCount']),
-    totalPoints:       _parseDouble(j['totalPoints']),
-    createdAt:         j['createdAt'],
-    // Teacher-controlled fields — safe defaults when absent (e.g. offline cache)
-    timeLimitMinutes:  j['timeLimitMinutes'] != null ? _parseInt(j['timeLimitMinutes']) : null,
-    deadline:          j['deadline'] as String?,
-    showAnswers:       j['showAnswers'] == true || j['showAnswers'] == 1,
+    id:               _parseInt(j['id']),
+    title:            j['title']       ?? '',
+    description:      j['description'],
+    classRoomId:      _parseInt(j['classRoomId']),
+    classRoomName:    j['classRoomName'],
+    teacherName:      j['teacherName'],
+    questionCount:    _parseInt(j['questionCount']),
+    totalPoints:      _parseDouble(j['totalPoints']),
+    createdAt:        j['createdAt'],
+    timeLimitMinutes: j['timeLimitMinutes'] != null
+        ? _parseInt(j['timeLimitMinutes']) : null,
+    deadline:         j['deadline'] as String?,
+    showAnswers:      j['showAnswers'] == true || j['showAnswers'] == 1,
   );
 }
 
 class QuestionModel {
-  final int id;
-  final int qIndex;
-  final String type; // MCQ, TF, IDENT, ESSAY, CODING
-  final String text;
-  final double points;
+  final int            id;
+  final int            qIndex;
+  final String         type; // MCQ | TF | IDENT | ESSAY | CODING
+  final String         text;
+  final double         points;
   final List<ChoiceModel> choices;
 
-  QuestionModel({
+  const QuestionModel({
     required this.id,
     required this.qIndex,
     required this.type,
     required this.text,
-    this.points = 1.0,
+    this.points  = 1.0,
     this.choices = const [],
   });
 
   factory QuestionModel.fromJson(Map<String, dynamic> j) => QuestionModel(
     id:      _parseInt(j['id']),
     qIndex:  _parseInt(j['qIndex']),
-    type:    j['type']   ?? 'ESSAY',
-    text:    j['text']   ?? '',
+    type:    j['type']  ?? 'ESSAY',
+    text:    j['text']  ?? '',
     points:  _parseDouble(j['points']),
-    choices: j['choices'] != null
-        ? (j['choices'] as List).map((c) => ChoiceModel.fromJson(c)).toList()
-        : [],
+    choices: (j['choices'] as List? ?? [])
+        .map((c) => ChoiceModel.fromJson(c as Map<String, dynamic>))
+        .toList(),
   );
 }
 
 class ChoiceModel {
-  final int id;
+  final int    id;
   final String text;
 
-  ChoiceModel({required this.id, required this.text});
+  const ChoiceModel({required this.id, required this.text});
 
   factory ChoiceModel.fromJson(Map<String, dynamic> j) => ChoiceModel(
     id:   _parseInt(j['id']),
@@ -160,19 +170,18 @@ class ChoiceModel {
 }
 
 class AttemptModel {
-  final int id;
-  final int quizId;
-  final String quizTitle;
-  final double score;
-  final double totalPoints;
-  final int totalQuestions;
-  final int answeredCount;
-  final int skippedCount;
+  final int     id;
+  final int     quizId;
+  final String  quizTitle;
+  final double  score;
+  final double  totalPoints;
+  final int     totalQuestions;
+  final int     answeredCount;
+  final int     skippedCount;
   final String? submittedAt;
-  /// Mirrors quiz.showAnswers — whether the teacher released the answer breakdown.
-  final bool showAnswers;
+  final bool    showAnswers;
 
-  AttemptModel({
+  const AttemptModel({
     required this.id,
     required this.quizId,
     required this.quizTitle,
@@ -202,7 +211,8 @@ class AttemptModel {
   );
 }
 
-// ── Type-safe helpers (handle int/double from both SQLite and JSON) ────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 int _parseInt(dynamic v) {
   if (v == null) return 0;
   if (v is int) return v;

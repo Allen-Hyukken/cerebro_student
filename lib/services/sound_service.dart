@@ -1,20 +1,61 @@
 import 'package:audioplayers/audioplayers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+// ── Music track catalogue ──────────────────────────────────────────────────────
+
+enum MusicTrack { background, batidaoFunk }
+
+extension MusicTrackX on MusicTrack {
+  String get label {
+    switch (this) {
+      case MusicTrack.background:  return 'Default';
+      case MusicTrack.batidaoFunk: return 'LOCK-IN';
+    }
+  }
+
+  String get emoji {
+    switch (this) {
+      case MusicTrack.background:  return '🎵';
+      case MusicTrack.batidaoFunk: return '🎶';
+    }
+  }
+
+  String get asset {
+    switch (this) {
+      case MusicTrack.background:  return 'sounds/background.mp3';
+      case MusicTrack.batidaoFunk: return 'sounds/batidao_funk.mp3';
+    }
+  }
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
 
 class SoundService {
   static final SoundService _instance = SoundService._();
   factory SoundService() => _instance;
   SoundService._();
 
-  final AudioPlayer _bgPlayer      = AudioPlayer(playerId: 'bg');
-  final AudioPlayer _clickPlayer   = AudioPlayer(playerId: 'click');
-  final AudioPlayer _warningPlayer = AudioPlayer(playerId: 'warning');
-  final AudioPlayer _finishPlayer  = AudioPlayer(playerId: 'finish');
+  static const _prefEnabled = 'bg_music_enabled';
+  static const _prefTrack   = 'bg_music_track';
 
-  bool _bgEnabled = true;
-  bool get isBgEnabled => _bgEnabled;
+  final _bgPlayer      = AudioPlayer(playerId: 'bg');
+  final _clickPlayer   = AudioPlayer(playerId: 'click');
+  final _warningPlayer = AudioPlayer(playerId: 'warning');
+  final _finishPlayer  = AudioPlayer(playerId: 'finish');
+
+  bool       _bgEnabled    = true;
+  MusicTrack _currentTrack = MusicTrack.background;
+
+  bool       get isBgEnabled   => _bgEnabled;
+  MusicTrack get currentTrack  => _currentTrack;
 
   // ── Init ──────────────────────────────────────────────────────────────────
+
   Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    _bgEnabled    = prefs.getBool(_prefEnabled) ?? true;
+    _currentTrack = MusicTrack.values[prefs.getInt(_prefTrack) ?? 0];
+
     try {
       await AudioPlayer.global.setAudioContext(AudioContext(
         android: AudioContextAndroid(
@@ -29,6 +70,7 @@ class SoundService {
   }
 
   // ── Background music ──────────────────────────────────────────────────────
+
   Future<void> playBackground() async {
     if (!_bgEnabled) return;
     try {
@@ -42,8 +84,8 @@ class SoundService {
         ),
       ));
       await _bgPlayer.setReleaseMode(ReleaseMode.loop);
-      await _bgPlayer.setVolume(3.0);
-      await _bgPlayer.play(AssetSource('sounds/background.mp3'));
+      await _bgPlayer.setVolume(0.6);
+      await _bgPlayer.play(AssetSource(_currentTrack.asset));
     } catch (_) {}
   }
 
@@ -53,11 +95,31 @@ class SoundService {
 
   Future<void> toggleBackground() async {
     _bgEnabled = !_bgEnabled;
-    if (_bgEnabled) await playBackground();
-    else await stopBackground();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefEnabled, _bgEnabled);
+    _bgEnabled ? await playBackground() : await stopBackground();
   }
 
-  // ── Click ─────────────────────────────────────────────────────────────────
+  Future<void> setEnabled(bool value) async {
+    _bgEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefEnabled, value);
+    value ? await playBackground() : await stopBackground();
+  }
+
+  /// Switch to a different track (restarts playback if currently playing).
+  Future<void> setTrack(MusicTrack track) async {
+    _currentTrack = track;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_prefTrack, track.index);
+    if (_bgEnabled) {
+      await stopBackground();
+      await playBackground();
+    }
+  }
+
+  // ── SFX ───────────────────────────────────────────────────────────────────
+
   Future<void> playClick() async {
     try {
       await _clickPlayer.setAudioContext(AudioContext(
@@ -75,7 +137,6 @@ class SoundService {
     } catch (_) {}
   }
 
-  // ── Warning ───────────────────────────────────────────────────────────────
   Future<void> playWarning() async {
     try {
       await _warningPlayer.stop();
@@ -84,7 +145,6 @@ class SoundService {
     } catch (_) {}
   }
 
-  // ── Finish ────────────────────────────────────────────────────────────────
   Future<void> playFinish() async {
     try {
       await _finishPlayer.stop();
