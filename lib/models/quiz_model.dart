@@ -63,6 +63,10 @@ class QuizModel {
   final double  totalPoints;
   final String? createdAt;
 
+  /// "DRAFT" = not yet deployed (students cannot see it).
+  /// "ACTIVE" = deployed by teacher (students can see and attempt it).
+  final String status;
+
   /// Minutes the student has after opening the quiz. null = no limit.
   final int? timeLimitMinutes;
 
@@ -82,10 +86,15 @@ class QuizModel {
     this.questionCount    = 0,
     this.totalPoints      = 0,
     this.createdAt,
+    this.status           = 'ACTIVE',
     this.timeLimitMinutes,
     this.deadline,
     this.showAnswers      = false,
   });
+
+  // ── Status helpers ──────────────────────────────────────────────────────────
+  bool get isDraft  => status == 'DRAFT';
+  bool get isActive => status == 'ACTIVE';
 
   /// Parses [deadline] as UTC when no timezone info is present,
   /// then converts to the device's local timezone.
@@ -93,9 +102,6 @@ class QuizModel {
     if (deadline == null) return null;
     try {
       final s = deadline!.trim();
-      // If the string already carries timezone info (Z, +, or a negative
-      // offset after the date part), parse as-is; otherwise append 'Z'
-      // so the server's naive UTC timestamps are treated correctly.
       final hasOffset = s.endsWith('Z') ||
           s.contains('+') ||
           (s.length > 10 && RegExp(r'T\d{2}:\d{2}.*-\d{2}').hasMatch(s));
@@ -121,6 +127,7 @@ class QuizModel {
     questionCount:    _parseInt(j['questionCount']),
     totalPoints:      _parseDouble(j['totalPoints']),
     createdAt:        j['createdAt'],
+    status:           (j['status'] as String?) ?? 'ACTIVE',
     timeLimitMinutes: j['timeLimitMinutes'] != null
         ? _parseInt(j['timeLimitMinutes']) : null,
     deadline:         j['deadline'] as String?,
@@ -129,11 +136,11 @@ class QuizModel {
 }
 
 class QuestionModel {
-  final int            id;
-  final int            qIndex;
-  final String         type; // MCQ | TF | IDENT | ESSAY | CODING
-  final String         text;
-  final double         points;
+  final int               id;
+  final int               qIndex;
+  final String            type; // MCQ | TF | IDENT | ESSAY | CODING
+  final String            text;
+  final double            points;
   final List<ChoiceModel> choices;
 
   const QuestionModel({

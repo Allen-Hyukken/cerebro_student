@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:quiz_app/theme/app_theme.dart';
 import 'package:quiz_app/models/quiz_model.dart';
 import 'package:quiz_app/services/api_service.dart';
@@ -22,15 +23,12 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   final Map<String, TextEditingController> _controllers = {};
   bool _submitting = false;
 
-  // ── Single global timer — counts down from teacher's time limit ───────────
-  // This timer runs for the ENTIRE quiz, not per question.
-  // It persists as the student navigates between questions.
+  // ── Global timer ─────────────────────────────────────────────────────────
   Timer? _globalTimer;
-  int  _globalSecondsLeft  = 0;
-  bool _warningAt60Fired   = false; // plays sound once at 60 s remaining
-  bool _warningAt30Fired   = false; // plays sound once at 30 s remaining
+  int  _globalSecondsLeft = 0;
+  bool _warningAt60Fired  = false;
+  bool _warningAt30Fired  = false;
 
-  // True when teacher set a time limit on this quiz
   bool get _hasTimer => widget.quiz.timeLimitMinutes != null;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -45,12 +43,10 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
-
   @override
   void initState() {
     super.initState();
     if (_hasTimer) {
-      // Initialise seconds from teacher's minutes setting
       _globalSecondsLeft = widget.quiz.timeLimitMinutes! * 60;
       _startGlobalTimer();
     }
@@ -63,8 +59,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // ── Global timer logic ────────────────────────────────────────────────────
-
+  // ── Timer ─────────────────────────────────────────────────────────────────
   void _startGlobalTimer() {
     _globalTimer?.cancel();
     _globalTimer = Timer.periodic(const Duration(seconds: 1), (t) {
@@ -72,8 +67,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       setState(() {
         if (_globalSecondsLeft > 0) {
           _globalSecondsLeft--;
-
-          // Warning sounds — play once each
           if (_globalSecondsLeft == 60 && !_warningAt60Fired) {
             _warningAt60Fired = true;
             SoundService().playWarning();
@@ -99,7 +92,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   Future<void> _autoSubmit() async {
     if (_submitting || !mounted) return;
     setState(() => _submitting = true);
-
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Row(children: [
@@ -112,11 +104,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         behavior: SnackBarBehavior.floating,
       ));
     }
-
     await _doSubmit();
   }
-
-  // ── Timer display helpers ─────────────────────────────────────────────────
 
   String get _timerDisplay {
     final m = _globalSecondsLeft ~/ 60;
@@ -124,7 +113,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
-  /// Colour shifts green → orange → red as time drains
   Color get _timerColor {
     if (_globalSecondsLeft <= 30)  return AppColors.wrong;
     if (_globalSecondsLeft <= 120) return Colors.orange;
@@ -134,12 +122,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   bool get _isCritical => _globalSecondsLeft <= 30;
 
   // ── Navigation ─────────────────────────────────────────────────────────────
-
   TextEditingController _controllerFor(String key) =>
       _controllers.putIfAbsent(key, () => TextEditingController(text: _answers[key] ?? ''));
 
-  /// Navigate to a specific question index.
-  /// The global timer is NOT reset — it keeps counting from wherever it was.
   void _goTo(int index) => setState(() => _currentIndex = index);
 
   void _goNext() {
@@ -174,7 +159,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   }
 
   // ── Submission ─────────────────────────────────────────────────────────────
-
   Future<void> _submitQuiz() async {
     if (_submitting) return;
     final answeredCount = questions
@@ -208,11 +192,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   Future<void> _doSubmit() async {
     _globalTimer?.cancel();
-
     final submittable = Map<String, String>.fromEntries(
       _answers.entries.where((e) => e.value.trim().isNotEmpty),
     );
-
     try {
       final result = await ApiService.submitAttempt(widget.quiz.id, submittable);
       if (!mounted) return;
@@ -294,7 +276,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   ]);
 
   // ── Build ──────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     if (questions.isEmpty) {
@@ -347,13 +328,12 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           ]),
         ),
 
-        // ── Timer bar (only shown when teacher set a time limit) ──────────
+        // ── Timer bar ─────────────────────────────────────────────────────
         if (_hasTimer)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _buildTimerBar(),
           ),
-
         if (_hasTimer) const SizedBox(height: 8),
 
         // ── Question body ─────────────────────────────────────────────────
@@ -363,7 +343,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const SizedBox(height: 8),
               Row(children: [
-                // Question type badge
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
@@ -377,7 +356,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                           fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
                 const Spacer(),
-                // Points badge
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
@@ -395,9 +373,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
               ]),
               const SizedBox(height: 14),
               Text(currentQuestion.text,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 18, fontWeight: FontWeight.bold,
-                      color: AppColors.textDark, height: 1.4)),
+                      color: TC.text(context), height: 1.4)),
               const SizedBox(height: 24),
               _buildAnswerWidget(),
               const SizedBox(height: 24),
@@ -419,67 +397,66 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                     foregroundColor: Colors.grey,
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 )
-              else const SizedBox(width: 60),
-              const SizedBox(),
+              else
+                const SizedBox(),
               if (!isLastQuestion)
                 TextButton.icon(
                   onPressed: () => _skipToUnanswered(true),
                   icon: const Icon(Icons.skip_next, size: 14),
-                  label: const Text('Next', style: TextStyle(fontSize: 11)),
+                  label: const Text('Skip', style: TextStyle(fontSize: 11)),
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.grey,
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 )
-              else const SizedBox(width: 60),
+              else
+                const SizedBox(),
             ]),
             const SizedBox(height: 4),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Row(children: [
               _NavButton(
                   icon: Icons.arrow_back_ios,
                   enabled: !isFirstQuestion,
                   onTap: _goPrev),
-              if (isLastQuestion)
-                ElevatedButton.icon(
+              const SizedBox(width: 12),
+              Expanded(
+                child: isLastQuestion
+                    ? ElevatedButton(
                   onPressed: _submitting ? null : _submitQuiz,
-                  icon: _submitting
-                      ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.send, size: 16),
-                  label: Text(
-                      _submitting ? 'Submitting...' : 'Submit',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 15)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.confirm,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30)),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
+                        borderRadius: BorderRadius.circular(14)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
+                  child: _submitting
+                      ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
+                      : const Text('Submit Quiz',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16)),
                 )
-              else
-                ElevatedButton(
+                    : ElevatedButton(
                   onPressed: _goNext,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30)),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
+                        borderRadius: BorderRadius.circular(14)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: const Text('Next',
                       style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 15)),
+                          fontWeight: FontWeight.bold, fontSize: 16)),
                 ),
+              ),
+              const SizedBox(width: 12),
               _NavButton(
                   icon: Icons.arrow_forward_ios,
                   enabled: !isLastQuestion,
@@ -491,10 +468,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Timer bar widget ──────────────────────────────────────────────────────
-  // Shared single bar for the whole quiz.
-  // Progress drains from full → empty as time runs out.
-
+  // ── Timer bar ─────────────────────────────────────────────────────────────
   Widget _buildTimerBar() {
     final totalSec = widget.quiz.timeLimitMinutes! * 60;
     final progress = (_globalSecondsLeft / totalSec).clamp(0.0, 1.0);
@@ -513,32 +487,27 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         border: Border.all(color: color.withValues(alpha: 0.40)),
       ),
       child: Row(children: [
-        // Pulsing icon when critical
         _isCritical
             ? _PulsingIcon(color: color)
             : Icon(Icons.hourglass_bottom_rounded, color: color, size: 20),
         const SizedBox(width: 10),
-        // Draining progress bar
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 6,
+              value: progress, minHeight: 6,
               backgroundColor: TC.card(context),
               valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
           ),
         ),
         const SizedBox(width: 10),
-        // Countdown display — grows slightly when critical
         AnimatedDefaultTextStyle(
           duration: const Duration(milliseconds: 300),
           style: TextStyle(
             fontSize: _isCritical ? 17 : 15,
             fontWeight: FontWeight.bold,
-            color: color,
-            fontFamily: 'monospace',
+            color: color, fontFamily: 'monospace',
           ),
           child: Text(_timerDisplay),
         ),
@@ -549,7 +518,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   }
 
   // ── Question type helpers ─────────────────────────────────────────────────
-
   String _typeLabel(String type) {
     switch (type) {
       case 'MCQ':    return 'Multiple Choice';
@@ -567,13 +535,12 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       case 'TF':     return Colors.teal;
       case 'IDENT':  return Colors.orange;
       case 'ESSAY':  return Colors.indigo;
-      case 'CODING': return AppColors.codeCard;
+      case 'CODING': return Colors.greenAccent.shade400; // visible in both modes
       default:       return AppColors.primary;
     }
   }
 
   // ── Answer widgets ────────────────────────────────────────────────────────
-
   Widget _buildAnswerWidget() {
     final q             = currentQuestion;
     final qId           = q.id.toString();
@@ -678,16 +645,19 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       case 'IDENT':
         final ctrl = _controllerFor(qId);
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Type your answer below:',
+          Text('Type your answer below:',
               style: TextStyle(
-                  fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w500)),
+                  fontSize: 13, color: TC.subText(context),
+                  fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           TextField(
             controller: ctrl,
             textCapitalization: TextCapitalization.sentences,
+            style: TextStyle(color: TC.text(context)),
             onChanged: (val) => setState(() => _answers[qId] = val),
             decoration: InputDecoration(
               hintText: 'Your answer...',
+              hintStyle: TextStyle(color: TC.subText(context)),
               filled: true, fillColor: TC.input(context),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -711,17 +681,20 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       case 'ESSAY':
         final ctrl = _controllerFor(qId);
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Write your answer below:',
+          Text('Write your answer below:',
               style: TextStyle(
-                  fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w500)),
+                  fontSize: 13, color: TC.subText(context),
+                  fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           TextField(
             controller: ctrl,
             maxLines: 7,
             textCapitalization: TextCapitalization.sentences,
+            style: TextStyle(color: TC.text(context)),
             onChanged: (val) => setState(() => _answers[qId] = val),
             decoration: InputDecoration(
               hintText: 'Write your answer here...',
+              hintStyle: TextStyle(color: TC.subText(context)),
               filled: true, fillColor: TC.input(context),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -747,72 +720,12 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         ]);
 
       case 'CODING':
-        final ctrl = _controllerFor(qId);
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: const BoxDecoration(
-              color: AppColors.codeCard,
-              borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(14), topRight: Radius.circular(14)),
-            ),
-            child: const Row(children: [
-              Icon(Icons.code, color: Colors.greenAccent, size: 16),
-              SizedBox(width: 8),
-              Text('Code Editor',
-                  style: TextStyle(
-                      color: Colors.greenAccent,
-                      fontFamily: 'monospace',
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600)),
-            ]),
-          ),
-          TextField(
-            controller: ctrl,
-            maxLines: 12,
-            style: const TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 13,
-                color: AppColors.textDark),
-            onChanged: (val) => setState(() => _answers[qId] = val),
-            decoration: InputDecoration(
-              hintText: '// Write your code here...',
-              hintStyle: const TextStyle(
-                  fontFamily: 'monospace', color: Colors.grey, fontSize: 13),
-              filled: true,
-              fillColor: TC.isDark(context)
-                  ? const Color(0xFF1A1A2E)
-                  : const Color(0xFFF4F4FB),
-              border: const OutlineInputBorder(
-                borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(14),
-                    bottomRight: Radius.circular(14)),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: const OutlineInputBorder(
-                borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(14),
-                    bottomRight: Radius.circular(14)),
-                borderSide: BorderSide(color: AppColors.primary, width: 2),
-              ),
-              contentPadding: const EdgeInsets.all(16),
-            ),
-          ),
-          if (currentAnswer != null && currentAnswer.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Row(children: [
-                const Icon(Icons.check_circle, size: 13, color: AppColors.correct),
-                const SizedBox(width: 4),
-                Text(
-                  '${currentAnswer.trim().split('\n').length} '
-                      'line${currentAnswer.trim().split('\n').length == 1 ? '' : 's'} written',
-                  style: const TextStyle(fontSize: 12, color: AppColors.correct),
-                ),
-              ]),
-            ),
-        ]);
+        return _CodingEditor(
+          qId:           qId,
+          initialValue:  _answers[qId] ?? '',
+          onChanged:     (val) => setState(() => _answers[qId] = val),
+          onClear:       () => setState(() => _answers.remove(qId)),
+        );
 
       default:
         return const SizedBox();
@@ -820,7 +733,294 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   }
 }
 
-// ── Pulsing icon widget (used when timer is critical ≤30s) ────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// CODING EDITOR WIDGET
+// Proper code editor with:
+//   • Dark background (#0D1117) regardless of app theme
+//   • Live line numbers
+//   • Tab key → inserts 4 spaces
+//   • Monospace font throughout
+//   • Line / character counter footer
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _CodingEditor extends StatefulWidget {
+  final String   qId;
+  final String   initialValue;
+  final ValueChanged<String> onChanged;
+  final VoidCallback         onClear;
+
+  const _CodingEditor({
+    required this.qId,
+    required this.initialValue,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  @override
+  State<_CodingEditor> createState() => _CodingEditorState();
+}
+
+class _CodingEditorState extends State<_CodingEditor> {
+  late TextEditingController _ctrl;
+  late ScrollController       _lineScrollCtrl;
+  late ScrollController       _editorScrollCtrl;
+
+  // Editor colours (always dark — code editors should be dark)
+  static const Color _editorBg      = Color(0xFF0D1117);   // GitHub-dark style
+  static const Color _lineNumBg     = Color(0xFF161B22);
+  static const Color _lineNumColor  = Color(0xFF6E7681);
+  static const Color _codeColor     = Color(0xFFE6EDF3);   // near-white
+  static const Color _headerBg      = Color(0xFF21262D);
+  static const Color _borderColor   = Color(0xFF30363D);
+  static const Color _footerBg      = Color(0xFF161B22);
+
+  int _lineCount = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl              = TextEditingController(text: widget.initialValue);
+    _lineScrollCtrl    = ScrollController();
+    _editorScrollCtrl  = ScrollController();
+    _lineCount         = _countLines(_ctrl.text);
+
+    _ctrl.addListener(() {
+      final lines = _countLines(_ctrl.text);
+      if (lines != _lineCount) setState(() => _lineCount = lines);
+      // Sync line number scroll to editor scroll
+      if (_editorScrollCtrl.hasClients && _lineScrollCtrl.hasClients) {
+        _lineScrollCtrl.jumpTo(_editorScrollCtrl.offset);
+      }
+    });
+
+    _editorScrollCtrl.addListener(() {
+      if (_lineScrollCtrl.hasClients) {
+        _lineScrollCtrl.jumpTo(_editorScrollCtrl.offset);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _lineScrollCtrl.dispose();
+    _editorScrollCtrl.dispose();
+    super.dispose();
+  }
+
+  int _countLines(String text) {
+    if (text.isEmpty) return 1;
+    return '\n'.allMatches(text).length + 1;
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    final hasCode  = _ctrl.text.trim().isNotEmpty;
+    final lineCount = _lineCount;
+    final charCount = _ctrl.text.length;
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+      // ── Header bar ─────────────────────────────────────────────────────────
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: const BoxDecoration(
+          color: _headerBg,
+          borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(14), topRight: Radius.circular(14)),
+          border: Border(
+            top:   BorderSide(color: _borderColor),
+            left:  BorderSide(color: _borderColor),
+            right: BorderSide(color: _borderColor),
+          ),
+        ),
+        child: Row(children: [
+          // Traffic light dots
+          _dot(const Color(0xFFFF5F57)),
+          const SizedBox(width: 6),
+          _dot(const Color(0xFFFFBD2E)),
+          const SizedBox(width: 6),
+          _dot(const Color(0xFF28C840)),
+          const SizedBox(width: 12),
+          const Icon(Icons.code, color: Colors.greenAccent, size: 14),
+          const SizedBox(width: 6),
+          const Text(
+            'Code Editor',
+            style: TextStyle(
+              color: Colors.greenAccent, fontFamily: 'monospace',
+              fontSize: 12, fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          if (hasCode)
+            GestureDetector(
+              onTap: () {
+                _ctrl.clear();
+                widget.onClear();
+              },
+              child: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+            ),
+        ]),
+      ),
+
+      // ── Editor area (line numbers + code) ──────────────────────────────────
+      Container(
+        decoration: const BoxDecoration(
+          color: _editorBg,
+          border: Border.symmetric(
+            vertical: BorderSide(color: _borderColor),
+          ),
+        ),
+        constraints: const BoxConstraints(minHeight: 200, maxHeight: 320),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+          // Line numbers column
+          Container(
+            width: 40,
+            color: _lineNumBg,
+            child: SingleChildScrollView(
+              controller: _lineScrollCtrl,
+              physics: const NeverScrollableScrollPhysics(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: List.generate(lineCount, (i) => SizedBox(
+                    height: 20, // must match line height below
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        '${i + 1}',
+                        style: const TextStyle(
+                          color: _lineNumColor,
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                          height: 1.0,
+                        ),
+                      ),
+                    ),
+                  )),
+                ),
+              ),
+            ),
+          ),
+
+          // Code input
+          Expanded(
+            child: KeyboardListener(
+              focusNode: FocusNode(),
+              onKeyEvent: (event) {
+                // Tab → insert 4 spaces
+                if (event is KeyDownEvent &&
+                    event.logicalKey == LogicalKeyboardKey.tab) {
+                  final text     = _ctrl.text;
+                  final sel      = _ctrl.selection;
+                  final newText  = text.replaceRange(sel.start, sel.end, '    ');
+                  _ctrl.value = TextEditingValue(
+                    text: newText,
+                    selection: TextSelection.collapsed(offset: sel.start + 4),
+                  );
+                  widget.onChanged(newText);
+                }
+              },
+              child: SingleChildScrollView(
+                controller: _editorScrollCtrl,
+                child: IntrinsicHeight(
+                  child: TextField(
+                    controller: _ctrl,
+                    maxLines: null,
+                    expands: true,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                      color: _codeColor,
+                      height: 1.54,   // ~20 px per line at 13 px font size
+                    ),
+                    onChanged: widget.onChanged,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    decoration: const InputDecoration(
+                      hintText: '// Write your code here...',
+                      hintStyle: TextStyle(
+                        fontFamily: 'monospace', color: _lineNumColor, fontSize: 13,
+                      ),
+                      filled: true,
+                      fillColor: _editorBg,
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      ),
+
+      // ── Footer bar ─────────────────────────────────────────────────────────
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: const BoxDecoration(
+          color: _footerBg,
+          borderRadius: BorderRadius.only(
+              bottomLeft: Radius.circular(14), bottomRight: Radius.circular(14)),
+          border: Border(
+            bottom: BorderSide(color: _borderColor),
+            left:   BorderSide(color: _borderColor),
+            right:  BorderSide(color: _borderColor),
+          ),
+        ),
+        child: Row(children: [
+          if (hasCode) ...[
+            const Icon(Icons.check_circle, size: 12, color: Colors.greenAccent),
+            const SizedBox(width: 5),
+            Text(
+              '$lineCount line${lineCount == 1 ? '' : 's'}  ·  $charCount char${charCount == 1 ? '' : 's'}',
+              style: const TextStyle(
+                fontFamily: 'monospace', fontSize: 11, color: _lineNumColor,
+              ),
+            ),
+          ] else ...[
+            const Icon(Icons.info_outline, size: 12, color: _lineNumColor),
+            const SizedBox(width: 5),
+            const Text(
+              'Start typing your solution…',
+              style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: _lineNumColor),
+            ),
+          ],
+          const Spacer(),
+          const Text(
+            'Tab = 4 spaces',
+            style: TextStyle(fontFamily: 'monospace', fontSize: 10, color: _lineNumColor),
+          ),
+        ]),
+      ),
+
+      // ── Note below editor ──────────────────────────────────────────────────
+      const SizedBox(height: 8),
+      Row(children: const [
+        Icon(Icons.lightbulb_outline, size: 13, color: Colors.amber),
+        SizedBox(width: 5),
+        Flexible(child: Text(
+          'Whitespace, indentation, and comments are ignored during grading.',
+          style: TextStyle(fontSize: 11, color: Colors.grey),
+        )),
+      ]),
+    ]);
+  }
+
+  Widget _dot(Color color) => Container(
+    width: 11, height: 11,
+    decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+  );
+}
+
+// ── Supporting widgets ────────────────────────────────────────────────────────
 
 class _PulsingIcon extends StatefulWidget {
   final Color color;
@@ -833,7 +1033,7 @@ class _PulsingIcon extends StatefulWidget {
 class _PulsingIconState extends State<_PulsingIcon>
     with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
-  late Animation<double> _anim;
+  late Animation<double>   _anim;
 
   @override
   void initState() {
@@ -846,10 +1046,7 @@ class _PulsingIconState extends State<_PulsingIcon>
   }
 
   @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+  void dispose() { _ctrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) => FadeTransition(
@@ -858,11 +1055,9 @@ class _PulsingIconState extends State<_PulsingIcon>
   );
 }
 
-// ── Helper widgets ─────────────────────────────────────────────────────────────
-
 class _NavButton extends StatelessWidget {
   final IconData icon;
-  final bool enabled;
+  final bool     enabled;
   final VoidCallback onTap;
   const _NavButton({required this.icon, required this.enabled, required this.onTap});
 

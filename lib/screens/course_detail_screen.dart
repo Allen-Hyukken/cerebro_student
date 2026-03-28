@@ -163,51 +163,70 @@ class CourseDetailScreen extends ConsumerWidget {
                   ],
                 ),
               ),
-              data: (quizzes) => quizzes.isEmpty
-                  ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.quiz_outlined,
-                        color: TC.subText(context), size: 64),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No quizzes yet.',
-                      style: TextStyle(
-                        color: TC.subText(context), fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-                  : RefreshIndicator(
-                onRefresh: () => ref
-                    .read(classroomQuizzesProvider(classroom.id).notifier)
-                    .reload(),
-                child: GridView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1.3,
-                  ),
-                  itemCount: quizzes.length,
-                  itemBuilder: (context, index) {
-                    final quiz = quizzes[index];
-                    return _QuizCard(
-                      quiz: quiz,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => QuizIntroScreen(quiz: quiz),
+              data: (allQuizzes) {
+                // ── Filter: students only see ACTIVE quizzes ───────────────
+                // Flask already returns only ACTIVE quizzes, but we guard
+                // here too in case a cached/offline response slips through.
+                final quizzes = allQuizzes
+                    .where((q) => q.isActive)
+                    .toList();
+
+                if (quizzes.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.quiz_outlined,
+                            color: TC.subText(context), size: 64),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No quizzes available yet.',
+                          style: TextStyle(
+                            color: TC.subText(context), fontSize: 16,
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Your teacher hasn\'t deployed any quizzes.',
+                          style: TextStyle(
+                            color: TC.subText(context), fontSize: 13,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return RefreshIndicator(
+                  onRefresh: () => ref
+                      .read(classroomQuizzesProvider(classroom.id).notifier)
+                      .reload(),
+                  child: GridView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 1.3,
+                    ),
+                    itemCount: quizzes.length,
+                    itemBuilder: (context, index) {
+                      final quiz = quizzes[index];
+                      return _QuizCard(
+                        quiz: quiz,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => QuizIntroScreen(quiz: quiz),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
             ),
           ),
         ]),
@@ -236,22 +255,48 @@ class _QuizCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Only ACTIVE quizzes reach here, but guard anyway
+    final isAvailable = quiz.isActive && !quiz.isDeadlinePassed;
+
     return GestureDetector(
-      onTap: onTap,
+      onTap: isAvailable ? onTap : () => _showUnavailableSnack(context),
       child: Container(
         decoration: BoxDecoration(
           color: TC.card(context),
           borderRadius: BorderRadius.circular(14),
+          border: quiz.isDeadlinePassed
+              ? Border.all(color: AppColors.wrong.withValues(alpha: 0.4))
+              : null,
         ),
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // ── Deadline expired badge ─────────────────────────────────────
+            if (quiz.isDeadlinePassed)
+              Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.wrong.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.lock_clock, size: 11, color: AppColors.wrong),
+                  SizedBox(width: 4),
+                  Text('Closed', style: TextStyle(
+                    fontSize: 10, color: AppColors.wrong, fontWeight: FontWeight.w600,
+                  )),
+                ]),
+              ),
+
             Text(
               quiz.title,
-              style: const TextStyle(
-                color: AppColors.primary,
+              style: TextStyle(
+                color: quiz.isDeadlinePassed
+                    ? TC.subText(context)
+                    : AppColors.primary,
                 fontWeight: FontWeight.bold, fontSize: 15,
               ),
               overflow: TextOverflow.ellipsis, maxLines: 2,
@@ -274,9 +319,41 @@ class _QuizCard extends StatelessWidget {
                 style: TextStyle(color: TC.subText(context), fontSize: 12),
               ),
             ]),
+
+            // ── Deadline badge ─────────────────────────────────────────────
+            if (quiz.deadlineDateTime != null && !quiz.isDeadlinePassed) ...[
+              const SizedBox(height: 4),
+              Row(children: [
+                Icon(Icons.schedule, size: 12, color: Colors.orange.shade400),
+                const SizedBox(width: 3),
+                Flexible(child: Text(
+                  _formatDeadline(quiz.deadlineDateTime!),
+                  style: TextStyle(
+                    fontSize: 10, color: Colors.orange.shade400,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                )),
+              ]),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  String _formatDeadline(DateTime dt) {
+    final now  = DateTime.now();
+    final diff = dt.difference(now);
+    if (diff.inHours < 24) return 'Due in ${diff.inHours}h ${diff.inMinutes % 60}m';
+    return 'Due ${dt.month}/${dt.day} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  void _showUnavailableSnack(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('This quiz is no longer available.'),
+      backgroundColor: AppColors.wrong,
+      behavior: SnackBarBehavior.floating,
+      duration: Duration(seconds: 2),
+    ));
   }
 }
