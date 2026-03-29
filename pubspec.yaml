@@ -50,3 +50,4 @@ flutter:
     - assets/sounds/click.mp3
     - assets/sounds/warning.mp3
     - assets/sounds/finish.mp3
+    - assets/sounds/flowstate.mp3

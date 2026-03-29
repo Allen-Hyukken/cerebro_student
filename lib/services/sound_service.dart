@@ -3,13 +3,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 // ── Music track catalogue ─────────────────────────────────────────────────────
 
-enum MusicTrack { background, batidaoFunk }
+enum MusicTrack { background, batidaoFunk, flowstate }
 
 extension MusicTrackX on MusicTrack {
   String get label {
     switch (this) {
       case MusicTrack.background:  return 'Default';
       case MusicTrack.batidaoFunk: return 'LOCK-IN';
+      case MusicTrack.flowstate:   return 'Flowstate';
     }
   }
 
@@ -17,6 +18,7 @@ extension MusicTrackX on MusicTrack {
     switch (this) {
       case MusicTrack.background:  return '🎵';
       case MusicTrack.batidaoFunk: return '🎶';
+      case MusicTrack.flowstate:   return '🌊';
     }
   }
 
@@ -24,6 +26,7 @@ extension MusicTrackX on MusicTrack {
     switch (this) {
       case MusicTrack.background:  return 'sounds/background.mp3';
       case MusicTrack.batidaoFunk: return 'sounds/batidao_funk.mp3';
+      case MusicTrack.flowstate:   return 'sounds/flowstate.mp3';
     }
   }
 }
