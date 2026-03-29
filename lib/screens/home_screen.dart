@@ -113,72 +113,70 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  // ── Music picker — only Default and LOCK-IN ───────────────────────────────
   void _showMusicPicker() {
-    final sound = ref.read(soundProvider);
     showModalBottomSheet(
       context: context,
       backgroundColor: TC.surface(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade400,
-                borderRadius: BorderRadius.circular(2),
-              ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade400,
+              borderRadius: BorderRadius.circular(2),
             ),
-            const SizedBox(height: 20),
-            Text('Choose Music',
-                style: TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.bold,
-                  color: TC.text(context),
-                )),
-            const SizedBox(height: 16),
-            ...MusicTrack.values.map((track) {
-              final isSelected = ref.read(soundProvider).track == track;
-              return GestureDetector(
-                onTap: () async {
-                  await ref.read(soundProvider.notifier).setTrack(track);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppColors.primary.withValues(alpha: 0.12)
-                        : TC.card(context),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: isSelected ? AppColors.primary : Colors.transparent,
-                      width: 2,
-                    ),
+          ),
+          const SizedBox(height: 20),
+          Text('Choose Music',
+              style: TextStyle(
+                fontSize: 18, fontWeight: FontWeight.bold,
+                color: TC.text(context),
+              )),
+          const SizedBox(height: 16),
+          ...MusicTrack.values.map((track) {
+            final current = ref.read(soundProvider).track;
+            final isSelected = current == track;
+            return GestureDetector(
+              onTap: () async {
+                await ref.read(soundProvider.notifier).setTrack(track);
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? AppColors.primary.withValues(alpha: 0.12)
+                      : TC.card(context),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isSelected ? AppColors.primary : Colors.transparent,
+                    width: 2,
                   ),
-                  child: Row(children: [
-                    Text(track.emoji, style: const TextStyle(fontSize: 24)),
-                    const SizedBox(width: 14),
-                    Expanded(child: Text(track.label,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: isSelected ? AppColors.primary : TC.text(context),
-                        ))),
-                    if (isSelected)
-                      const Icon(Icons.check_circle,
-                          color: AppColors.primary, size: 20),
-                  ]),
                 ),
-              );
-            }),
-          ]),
-        );
-      }),
+                child: Row(children: [
+                  Text(track.emoji, style: const TextStyle(fontSize: 24)),
+                  const SizedBox(width: 14),
+                  Expanded(child: Text(track.label,
+                      style: TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600,
+                        color: isSelected ? AppColors.primary : TC.text(context),
+                      ))),
+                  if (isSelected)
+                    const Icon(Icons.check_circle,
+                        color: AppColors.primary, size: 20),
+                ]),
+              ),
+            );
+          }),
+        ]),
+      ),
     );
   }
 
@@ -198,9 +196,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       body: SafeArea(
         child: Stack(children: [
 
-          // ── Main content ─────────────────────────────────────────────────
+          // ── Main content ──────────────────────────────────────────────────
           Column(children: [
-            // Top bar
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(children: [
@@ -229,7 +226,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ]),
             ),
 
-            // Body
             Expanded(
               child: classroomsAsync.when(
                 loading: () => const Center(
@@ -266,7 +262,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
           ]),
 
-          // ── Drawer overlay ────────────────────────────────────────────────
+          // ── Drawer ────────────────────────────────────────────────────────
           if (_drawerOpen)
             GestureDetector(
               onTap: _closeDrawer,
@@ -295,8 +291,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                             child: Row(children: [
                               IconButton(
-                                icon: const Icon(Icons.arrow_back,
-                                    color: Colors.white),
+                                icon: const Icon(Icons.arrow_back, color: Colors.white),
                                 onPressed: _closeDrawer,
                               ),
                               const SizedBox(width: 8),
@@ -311,8 +306,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           // User info
                           Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 12,
-                            ),
+                                horizontal: 20, vertical: 12),
                             child: Row(children: [
                               const UserAvatar(size: 56, borderColor: Colors.white),
                               const SizedBox(width: 14),
@@ -329,8 +323,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                   const SizedBox(height: 2),
                                   Text(userEmail,
                                       style: const TextStyle(
-                                        color: Colors.white70, fontSize: 12,
-                                      ),
+                                          color: Colors.white70, fontSize: 12),
                                       overflow: TextOverflow.ellipsis),
                                 ],
                               )),
@@ -341,19 +334,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           const SizedBox(height: 8),
 
                           Flexible(child: SingleChildScrollView(child: Column(children: [
-                            // ── Home → Dashboard (personal overview) ──────
-                            _DrawerItem(Icons.home_outlined, 'Dashboard', () {
+
+                            // ── Home → Dashboard ──────────────────────────
+                            _DrawerItem(Icons.home_outlined, 'Home', () {
                               _closeDrawer();
                               Navigator.push(context, MaterialPageRoute(
                                 builder: (_) => const DashboardScreen(),
                               ));
                             }),
-                            // ── My Classrooms → stays on this screen ──────
+
+                            // ── My Classrooms → stay here ─────────────────
                             _DrawerItem(Icons.book_outlined, 'My Classrooms', () {
                               _closeDrawer();
-                              // Already on the classrooms screen — just refresh
                               ref.read(classroomsProvider.notifier).reload();
                             }),
+
                             _DrawerItem(Icons.history_edu, 'Quiz History', () {
                               _closeDrawer();
                               Navigator.push(context, MaterialPageRoute(
@@ -392,7 +387,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
                             const _DrawerDivider(),
 
-                            // Dark Mode
+                            // Dark Mode toggle
                             _DrawerToggle(
                               icon: isDark ? Icons.dark_mode : Icons.light_mode,
                               label: 'Dark Mode',
@@ -401,13 +396,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                   ref.read(themeProvider.notifier).setDark(val),
                             ),
 
-                            // Music toggle + track picker
+                            // Music toggle + picker
                             _DrawerMusicRow(
                               enabled: sound.enabled,
                               onToggle: () =>
                                   ref.read(soundProvider.notifier).toggle(),
                               onPickTrack: sound.enabled ? _showMusicPicker : null,
-                              currentTrack: sound.track,
+                              currentTrackLabel: sound.track.label,
                             ),
 
                             _DrawerItem(Icons.info_outline, 'About', () {
@@ -417,22 +412,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 builder: (ctx) => AlertDialog(
                                   backgroundColor: TC.surface(context),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
+                                      borderRadius: BorderRadius.circular(20)),
                                   title: Text('Cerebro Metron',
                                       style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: TC.text(context),
-                                      )),
+                                          fontWeight: FontWeight.bold,
+                                          color: TC.text(context))),
                                   content: Text(
-                                    'A quiz app for students.\nVersion 1.0.0',
-                                    style: TextStyle(color: TC.subText(context)),
-                                  ),
+                                      'A quiz app for students.\nVersion 1.0.0',
+                                      style: TextStyle(color: TC.subText(context))),
                                   actions: [
                                     TextButton(
-                                      onPressed: () => Navigator.pop(ctx),
-                                      child: const Text('OK'),
-                                    ),
+                                        onPressed: () => Navigator.pop(ctx),
+                                        child: const Text('OK')),
                                   ],
                                 ),
                               );
@@ -442,14 +433,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           // Logout
                           Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8,
-                            ),
+                                horizontal: 16, vertical: 8),
                             child: GestureDetector(
                               onTap: _logout,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  vertical: 14, horizontal: 20,
-                                ),
+                                    vertical: 14, horizontal: 20),
                                 decoration: BoxDecoration(
                                   color: Colors.white24,
                                   borderRadius: BorderRadius.circular(14),
@@ -506,9 +495,9 @@ class _DrawerItem extends StatelessWidget {
 }
 
 class _DrawerToggle extends StatelessWidget {
-  final IconData      icon;
-  final String        label;
-  final bool          value;
+  final IconData           icon;
+  final String             label;
+  final bool               value;
   final ValueChanged<bool> onChanged;
   const _DrawerToggle({
     required this.icon,
@@ -528,7 +517,7 @@ class _DrawerToggle extends StatelessWidget {
       Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: Colors.white,
+        activeThumbColor: Colors.white,
         activeTrackColor: AppColors.darkCard,
         inactiveThumbColor: Colors.white70,
         inactiveTrackColor: Colors.white24,
@@ -537,16 +526,15 @@ class _DrawerToggle extends StatelessWidget {
   );
 }
 
-/// Music row: toggle on/off + tap label to pick a track when enabled.
 class _DrawerMusicRow extends StatelessWidget {
-  final bool         enabled;
-  final VoidCallback onToggle;
+  final bool          enabled;
+  final VoidCallback  onToggle;
   final VoidCallback? onPickTrack;
-  final MusicTrack   currentTrack;
+  final String        currentTrackLabel;
   const _DrawerMusicRow({
     required this.enabled,
     required this.onToggle,
-    required this.currentTrack,
+    required this.currentTrackLabel,
     this.onPickTrack,
   });
 
@@ -563,12 +551,8 @@ class _DrawerMusicRow extends StatelessWidget {
             const Text('Music',
                 style: TextStyle(color: Colors.white, fontSize: 15)),
             if (enabled)
-              Text(
-                currentTrack.label,
-                style: const TextStyle(
-                  color: Colors.white54, fontSize: 11,
-                ),
-              ),
+              Text(currentTrackLabel,
+                  style: const TextStyle(color: Colors.white54, fontSize: 11)),
           ]),
         ),
       ),
@@ -589,7 +573,7 @@ class _DrawerMusicRow extends StatelessWidget {
       Switch(
         value: enabled,
         onChanged: (_) => onToggle(),
-        activeColor: Colors.white,
+        activeThumbColor: Colors.white,
         activeTrackColor: AppColors.darkCard,
         inactiveThumbColor: Colors.white70,
         inactiveTrackColor: Colors.white24,
@@ -598,7 +582,7 @@ class _DrawerMusicRow extends StatelessWidget {
   );
 }
 
-// ── Join class dialog body widgets ────────────────────────────────────────────
+// ── Join class dialog bodies ──────────────────────────────────────────────────
 
 class _JoinSuccessBody extends StatelessWidget {
   final VoidCallback onDone;
@@ -611,17 +595,14 @@ class _JoinSuccessBody extends StatelessWidget {
       Container(
         width: 70, height: 70,
         decoration: BoxDecoration(
-          color: AppColors.correct.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
-        ),
+            color: AppColors.correct.withValues(alpha: 0.12),
+            shape: BoxShape.circle),
         child: const Icon(Icons.check_circle, color: AppColors.correct, size: 44),
       ),
       const SizedBox(height: 20),
       Text("You've joined the class!",
-          style: TextStyle(
-            fontSize: 18, fontWeight: FontWeight.bold,
-            color: TC.text(context),
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+              color: TC.text(context)),
           textAlign: TextAlign.center),
       const SizedBox(height: 8),
       Text('The class has been added to your list.',
@@ -637,8 +618,7 @@ class _JoinSuccessBody extends StatelessWidget {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: const Text('Done',
-              style: TextStyle(fontWeight: FontWeight.bold)),
+          child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ),
     ],
@@ -646,20 +626,17 @@ class _JoinSuccessBody extends StatelessWidget {
 }
 
 class _JoinFormBody extends StatelessWidget {
-  final TextEditingController controller;
-  final bool    isDark;
-  final String? errorMsg;
-  final bool    joining;
-  final VoidCallback     onCancel;
-  final VoidCallback     onJoin;
-  final ValueChanged<String> onErrorChanged;
+  final TextEditingController    controller;
+  final bool                     isDark;
+  final String?                  errorMsg;
+  final bool                     joining;
+  final VoidCallback             onCancel;
+  final VoidCallback             onJoin;
+  final ValueChanged<String>     onErrorChanged;
   const _JoinFormBody({
-    required this.controller,
-    required this.isDark,
-    required this.errorMsg,
-    required this.joining,
-    required this.onCancel,
-    required this.onJoin,
+    required this.controller, required this.isDark,
+    required this.errorMsg,   required this.joining,
+    required this.onCancel,   required this.onJoin,
     required this.onErrorChanged,
   });
 
@@ -672,22 +649,18 @@ class _JoinFormBody extends StatelessWidget {
         Container(
           width: 42, height: 42,
           decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(12),
-          ),
+              color: AppColors.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12)),
           child: const Icon(Icons.class_outlined, color: AppColors.primary, size: 24),
         ),
         const SizedBox(width: 14),
         Expanded(child: Text('Join a Class',
-            style: TextStyle(
-              fontSize: 20, fontWeight: FontWeight.bold,
-              color: TC.text(context),
-            ))),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold,
+                color: TC.text(context)))),
         IconButton(
           onPressed: onCancel,
           icon: Icon(Icons.close, color: TC.subText(context)),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
+          padding: EdgeInsets.zero, constraints: const BoxConstraints(),
         ),
       ]),
       const SizedBox(height: 6),
@@ -699,11 +672,8 @@ class _JoinFormBody extends StatelessWidget {
         textCapitalization: TextCapitalization.characters,
         textAlign: TextAlign.center,
         maxLength: 8,
-        style: const TextStyle(
-          fontFamily: 'monospace', fontSize: 22,
-          fontWeight: FontWeight.bold, letterSpacing: 6,
-          color: AppColors.primary,
-        ),
+        style: const TextStyle(fontFamily: 'monospace', fontSize: 22,
+            fontWeight: FontWeight.bold, letterSpacing: 6, color: AppColors.primary),
         onChanged: onErrorChanged,
         decoration: InputDecoration(
           counterText: '', hintText: 'ABC123',
@@ -714,13 +684,11 @@ class _JoinFormBody extends StatelessWidget {
           ),
           filled: true, fillColor: TC.bg(context),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.primary, width: 2),
-          ),
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: AppColors.primary, width: 2)),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none),
           contentPadding: const EdgeInsets.symmetric(vertical: 18),
         ),
       ),
@@ -755,10 +723,8 @@ class _JoinFormBody extends StatelessWidget {
             disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.6),
           ),
           child: joining
-              ? const SizedBox(
-            width: 20, height: 20,
-            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-          )
+              ? const SizedBox(width: 20, height: 20,
+              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
               : const Text('Join Class',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
         )),
@@ -767,7 +733,7 @@ class _JoinFormBody extends StatelessWidget {
   );
 }
 
-// ── Shared small widgets ──────────────────────────────────────────────────────
+// ── Small shared widgets ──────────────────────────────────────────────────────
 
 class _AppLogoCircle extends StatelessWidget {
   @override
@@ -778,24 +744,17 @@ class _AppLogoCircle extends StatelessWidget {
       border: Border.all(color: AppColors.primary, width: 2),
       color: TC.surface(context),
     ),
-    child: ClipOval(child: Image.asset(
-      'assets/icons/icon.png', fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => const Icon(
-        Icons.psychology, size: 22, color: AppColors.primary,
-      ),
-    )),
+    child: ClipOval(child: Image.asset('assets/icons/icon.png', fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+        const Icon(Icons.psychology, size: 22, color: AppColors.primary))),
   );
 }
 
 class _SearchBar extends StatelessWidget {
-  final TextEditingController   controller;
-  final ValueChanged<String>    onChanged;
-  final VoidCallback            onClear;
-  const _SearchBar({
-    required this.controller,
-    required this.onChanged,
-    required this.onClear,
-  });
+  final TextEditingController controller;
+  final ValueChanged<String>  onChanged;
+  final VoidCallback          onClear;
+  const _SearchBar({required this.controller, required this.onChanged, required this.onClear});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -803,10 +762,8 @@ class _SearchBar extends StatelessWidget {
     decoration: BoxDecoration(
       color: TC.surface(context),
       borderRadius: BorderRadius.circular(30),
-      boxShadow: [BoxShadow(
-        color: Colors.black.withValues(alpha: 0.06),
-        blurRadius: 6, offset: const Offset(0, 2),
-      )],
+      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06),
+          blurRadius: 6, offset: const Offset(0, 2))],
     ),
     child: TextField(
       controller: controller,
@@ -817,10 +774,8 @@ class _SearchBar extends StatelessWidget {
         hintStyle: TextStyle(color: TC.subText(context), fontSize: 14),
         prefixIcon: Icon(Icons.search, color: TC.subText(context), size: 20),
         suffixIcon: controller.text.isNotEmpty
-            ? IconButton(
-          icon: Icon(Icons.close, size: 18, color: TC.subText(context)),
-          onPressed: onClear,
-        )
+            ? IconButton(icon: Icon(Icons.close, size: 18, color: TC.subText(context)),
+            onPressed: onClear)
             : null,
         border: InputBorder.none,
         contentPadding: const EdgeInsets.symmetric(vertical: 10),
@@ -854,8 +809,7 @@ class _ErrorBody extends StatelessWidget {
       ElevatedButton(
         onPressed: onRetry,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary, foregroundColor: Colors.white,
-        ),
+            backgroundColor: AppColors.primary, foregroundColor: Colors.white),
         child: const Text('Retry'),
       ),
     ],
@@ -896,8 +850,7 @@ class _ClassroomCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [BoxShadow(
           color: AppColors.primary.withValues(
-            alpha: TC.isDark(context) ? 0.15 : 0.08,
-          ),
+              alpha: TC.isDark(context) ? 0.15 : 0.08),
           blurRadius: 8, offset: const Offset(0, 4),
         )],
       ),
@@ -909,10 +862,8 @@ class _ClassroomCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(classroom.name,
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.bold, fontSize: 18,
-                  ),
+                  style: const TextStyle(color: AppColors.primary,
+                      fontWeight: FontWeight.bold, fontSize: 18),
                   overflow: TextOverflow.ellipsis),
               const SizedBox(height: 8),
               _MetaRow(Icons.tag, 'Code: ${classroom.code}'),
@@ -925,9 +876,7 @@ class _ClassroomCard extends StatelessWidget {
         )),
         ClipRRect(
           borderRadius: const BorderRadius.only(
-            topRight:    Radius.circular(20),
-            bottomRight: Radius.circular(20),
-          ),
+              topRight: Radius.circular(20), bottomRight: Radius.circular(20)),
           child: SizedBox(
             width: 160, height: 140,
             child: classroom.hasBanner && ApiService.token != null
@@ -959,8 +908,7 @@ class _MetaRow extends StatelessWidget {
     const SizedBox(width: 4),
     Flexible(child: Text(text,
         style: TextStyle(
-          color: color ?? TC.subText(context),
-          fontSize: 13,
+          color: color ?? TC.subText(context), fontSize: 13,
           fontWeight: color != null ? FontWeight.w500 : FontWeight.normal,
         ),
         overflow: TextOverflow.ellipsis)),

@@ -10,6 +10,9 @@ import 'package:quiz_app/theme/app_theme.dart';
 import 'package:quiz_app/services/api_service.dart';
 import 'package:quiz_app/services/xp_service.dart';
 import 'package:quiz_app/providers/classrooms_provider.dart';
+import 'package:quiz_app/models/quiz_model.dart';
+import 'package:quiz_app/providers/pending_quizzes_provider.dart';
+import 'package:quiz_app/screens/quiz_intro_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -44,11 +47,27 @@ class DashboardScreen extends ConsumerWidget {
           // ── Scrollable body ───────────────────────────────────────────────
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () => ref.read(classroomsProvider.notifier).syncAndReload(),
+              onRefresh: () async {
+                await ref.read(classroomsProvider.notifier).syncAndReload();
+                await ref.read(pendingQuizzesProvider.notifier).reload();
+              },
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
                   const SizedBox(height: 4),
+
+                  // ── Pending Quizzes ────────────────────────────────────
+                  _PendingQuizzesSection(
+                    onQuizTap: (QuizModel quiz) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => QuizIntroScreen(quiz: quiz),
+                        ),
+                      ).then((_) =>
+                          ref.read(pendingQuizzesProvider.notifier).reload());
+                    },
+                  ),
 
                   // ── Greeting ───────────────────────────────────────────
                   _GreetingCard(userName: userName),
@@ -611,6 +630,163 @@ class _RecentActivityState extends State<_RecentActivity> {
           ),
         ),
     ]);
+  }
+}
+
+// ── Pending Quizzes Section ───────────────────────────────────────────────────
+
+class _PendingQuizzesSection extends ConsumerWidget {
+  final void Function(QuizModel quiz) onQuizTap;
+  const _PendingQuizzesSection({required this.onQuizTap});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pendingAsync = ref.watch(pendingQuizzesProvider);
+
+    return pendingAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (pending) {
+        if (pending.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.confirm.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(
+                    width: 7, height: 7,
+                    decoration: const BoxDecoration(
+                      color: AppColors.confirm, shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${pending.length} Pending',
+                    style: const TextStyle(
+                      color: AppColors.confirm,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ]),
+              ),
+              const SizedBox(width: 10),
+              Text('Quizzes',
+                  style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold,
+                    color: TC.text(context),
+                  )),
+            ]),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 130,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: pending.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final item = pending[index];
+                  return _PendingQuizCard(
+                    item: item,
+                    onTap: () => onQuizTap(item.quiz),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PendingQuizCard extends StatelessWidget {
+  final PendingQuiz  item;
+  final VoidCallback onTap;
+  const _PendingQuizCard({required this.item, required this.onTap});
+
+  String _formatDeadline(DateTime dt) {
+    final diff = dt.difference(DateTime.now());
+    if (diff.inHours < 1)  return 'Due in ${diff.inMinutes}m';
+    if (diff.inHours < 24) return 'Due in ${diff.inHours}h';
+    if (diff.inDays == 1)  return 'Due tomorrow';
+    return 'Due in ${diff.inDays}d';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final deadline = item.quiz.deadlineDateTime;
+    final isUrgent = deadline != null &&
+        deadline.difference(DateTime.now()).inHours < 24;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 190,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: isUrgent
+                ? [AppColors.confirm.withValues(alpha: 0.85),
+              AppColors.confirm.withValues(alpha: 0.55)]
+                : [AppColors.primary, AppColors.darkCard],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [BoxShadow(
+            color: (isUrgent ? AppColors.confirm : AppColors.primary)
+                .withValues(alpha: 0.25),
+            blurRadius: 8, offset: const Offset(0, 4),
+          )],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(item.quiz.title,
+                  style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14,
+                  ),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 4),
+              Text(item.classroomName,
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ]),
+            Row(children: [
+              const Icon(Icons.quiz_outlined, size: 13, color: Colors.white70),
+              const SizedBox(width: 4),
+              Text('${item.quiz.questionCount} Qs',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              const Spacer(),
+              if (deadline != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(_formatDeadline(deadline),
+                      style: const TextStyle(
+                        color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600,
+                      )),
+                )
+              else
+                const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white54),
+            ]),
+          ],
+        ),
+      ),
+    );
   }
 }
 

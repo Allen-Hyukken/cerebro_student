@@ -1,7 +1,7 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// ── Music track catalogue ──────────────────────────────────────────────────────
+// ── Music track catalogue ─────────────────────────────────────────────────────
 
 enum MusicTrack { background, batidaoFunk }
 
@@ -46,15 +46,20 @@ class SoundService {
   bool       _bgEnabled    = true;
   MusicTrack _currentTrack = MusicTrack.background;
 
-  bool       get isBgEnabled   => _bgEnabled;
-  MusicTrack get currentTrack  => _currentTrack;
+  bool       get isBgEnabled  => _bgEnabled;
+  MusicTrack get currentTrack => _currentTrack;
 
   // ── Init ──────────────────────────────────────────────────────────────────
+  // MUST be awaited in main.dart before runApp so that by the time
+  // SoundNotifier.build() reads these values, they are already correct.
+  // This is the root fix for the "shows Default but plays LOCK-IN" bug.
 
   Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
-    _bgEnabled    = prefs.getBool(_prefEnabled) ?? true;
-    _currentTrack = MusicTrack.values[prefs.getInt(_prefTrack) ?? 0];
+    final prefs      = await SharedPreferences.getInstance();
+    _bgEnabled       = prefs.getBool(_prefEnabled) ?? true;
+    final savedIndex = prefs.getInt(_prefTrack) ?? 0;
+    _currentTrack    = MusicTrack.values[
+    savedIndex.clamp(0, MusicTrack.values.length - 1)];
 
     try {
       await AudioPlayer.global.setAudioContext(AudioContext(
@@ -107,7 +112,6 @@ class SoundService {
     value ? await playBackground() : await stopBackground();
   }
 
-  /// Switch to a different track (restarts playback if currently playing).
   Future<void> setTrack(MusicTrack track) async {
     _currentTrack = track;
     final prefs = await SharedPreferences.getInstance();

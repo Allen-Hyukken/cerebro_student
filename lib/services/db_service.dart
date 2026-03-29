@@ -298,6 +298,17 @@ class DbService {
     await database.delete('submitted_quizzes');
   }
 
+  /// Removes the lock for one quiz + one user.
+  /// Called when the teacher added new questions to an already-submitted quiz.
+  static Future<void> clearSubmittedQuizForUser(int quizId, int userId) async {
+    final database = await db;
+    await database.delete(
+      'submitted_quizzes',
+      where: 'quizId = ? AND userId = ?',
+      whereArgs: [quizId, userId],
+    );
+  }
+
   // ── Pending attempts ──────────────────────────────────────────────────────
 
   static Future<void> savePendingAttempt(int quizId, Map<String, String> answers) async {

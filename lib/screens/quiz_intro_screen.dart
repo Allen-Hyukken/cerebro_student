@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:quiz_app/theme/app_theme.dart';
 import 'package:quiz_app/models/quiz_model.dart';
 import 'package:quiz_app/services/api_service.dart';
+import 'package:quiz_app/services/db_service.dart';
 import 'package:quiz_app/screens/quiz_screen.dart';
 import 'package:quiz_app/screens/leaderboard_screen.dart';
 
@@ -66,6 +67,13 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
     try {
       final deadlinePassed = widget.quiz.isDeadlinePassed;
 
+      // ── Load questions first so we know the current count ─────────────
+      final data      = await ApiService.getQuizDetail(widget.quiz.id);
+      final questions = (data['questions'] as List? ?? [])
+          .map((q) => QuestionModel.fromJson(q))
+          .toList();
+      final currentQuestionCount = questions.length;
+
       // ── Check already submitted + fetch the student's score ───────────
       bool alreadySubmitted = false;
       double? myScore;
@@ -73,7 +81,6 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
 
       try {
         final attempts = await ApiService.getMyAttempts();
-        // Find the attempt that matches this quiz
         Map<String, dynamic>? match;
         for (final a in attempts) {
           final id = a['quizId'] ?? a['quiz_id'];
@@ -83,23 +90,28 @@ class _QuizIntroScreenState extends State<QuizIntroScreen>
           }
         }
         if (match != null) {
-          alreadySubmitted = true;
-          myScore       = (match['score']       ?? 0).toDouble();
-          myTotalPoints = (match['totalPoints'] ?? widget.quiz.totalPoints).toDouble();
-          if (ApiService.userId != null) {
-            await ApiService.markSubmittedLocally(widget.quiz.id, ApiService.userId!);
+          final previouslyAnswered = (match['totalQuestions'] ?? 0) as int;
+
+          // If teacher added new questions, unlock so student can answer them
+          if (currentQuestionCount > previouslyAnswered) {
+            if (ApiService.userId != null) {
+              await DbService.clearSubmittedQuizForUser(
+                  widget.quiz.id, ApiService.userId!);
+            }
+            alreadySubmitted = false; // unlocked!
+          } else {
+            alreadySubmitted = true;
+            myScore       = (match['score']       ?? 0).toDouble();
+            myTotalPoints = (match['totalPoints'] ?? widget.quiz.totalPoints).toDouble();
+            if (ApiService.userId != null) {
+              await ApiService.markSubmittedLocally(widget.quiz.id, ApiService.userId!);
+            }
           }
         }
       } catch (_) {
         // Server unreachable — fall back to local lock
         alreadySubmitted = await ApiService.hasSubmittedQuiz(widget.quiz.id);
       }
-
-      // ── Load questions ────────────────────────────────────────────────
-      final data      = await ApiService.getQuizDetail(widget.quiz.id);
-      final questions = (data['questions'] as List? ?? [])
-          .map((q) => QuestionModel.fromJson(q))
-          .toList();
 
       if (!mounted) return;
       setState(() {

@@ -17,7 +17,8 @@ class QuizScreen extends StatefulWidget {
   State<QuizScreen> createState() => _QuizScreenState();
 }
 
-class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
+class _QuizScreenState extends State<QuizScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   int _currentIndex = 0;
   final Map<String, String> _answers = {};
   final Map<String, TextEditingController> _controllers = {};
@@ -46,6 +47,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _enterFullscreen();
     if (_hasTimer) {
       _globalSecondsLeft = widget.quiz.timeLimitMinutes! * 60;
       _startGlobalTimer();
@@ -54,9 +57,47 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _exitFullscreen();
     _globalTimer?.cancel();
     for (final c in _controllers.values) c.dispose();
     super.dispose();
+  }
+
+  // ── Fullscreen ────────────────────────────────────────────────────────────
+
+  void _enterFullscreen() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  void _exitFullscreen() {
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
+  }
+
+  // ── App lifecycle (Home / Recents / phone call) ───────────────────────────
+  // Android fires these states:
+  //   inactive → phone call overlay, notification shade, OR Recents opened
+  //   paused   → app fully in background (Home pressed, switched via Recents)
+  //
+  // We use a flag so _exitAndSubmit only runs ONCE even if both fire.
+  bool _lifecycleSubmitFired = false;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      if (!_lifecycleSubmitFired && !_submitting) {
+        _lifecycleSubmitFired = true;
+        _exitAndSubmit();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // If somehow they come back (submit may still be in-flight), re-lock screen
+      _lifecycleSubmitFired = false;
+      _enterFullscreen();
+    }
   }
 
   // ── Timer ─────────────────────────────────────────────────────────────────
@@ -190,8 +231,30 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     await _doSubmit();
   }
 
+  /// Called when user presses back button, Home, or Recents.
+  /// Silently submits whatever answers exist so far.
+  Future<void> _exitAndSubmit() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+    _globalTimer?.cancel();
+    _exitFullscreen();
+    final submittable = Map<String, String>.fromEntries(
+      _answers.entries.where((e) => e.value.trim().isNotEmpty),
+    );
+    try {
+      final result = await ApiService.submitAttempt(widget.quiz.id, submittable);
+      if (!mounted) return;
+      Navigator.pushReplacement(context, MaterialPageRoute(
+        builder: (_) => ResultScreen(quiz: widget.quiz, attemptData: result),
+      ));
+    } catch (_) {
+      if (mounted) Navigator.pop(context);
+    }
+  }
+
   Future<void> _doSubmit() async {
     _globalTimer?.cancel();
+    _exitFullscreen();
     final submittable = Map<String, String>.fromEntries(
       _answers.entries.where((e) => e.value.trim().isNotEmpty),
     );
@@ -289,183 +352,190 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         .where((q) => _isAnswered(questions.indexOf(q)))
         .length;
 
-    return Scaffold(
-      backgroundColor: TC.bg(context),
-      body: SafeArea(child: Column(children: [
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _exitAndSubmit();
+      },
+      child: Scaffold(
+        backgroundColor: TC.bg(context),
+        body: SafeArea(child: Column(children: [
 
-        // ── Header ────────────────────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(children: [
-            IconButton(
-              icon: const Icon(Icons.close, color: AppColors.textDark),
-              onPressed: () => Navigator.pop(context),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onTap: _showNavigator,
-                child: Column(children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: LinearProgressIndicator(
-                      value: progress, minHeight: 8,
-                      backgroundColor: TC.card(context),
-                      valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+          // ── Header ────────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(children: [
+              IconButton(
+                icon: const Icon(Icons.close, color: AppColors.textDark),
+                onPressed: _exitAndSubmit,
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: _showNavigator,
+                  child: Column(children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: LinearProgressIndicator(
+                        value: progress, minHeight: 8,
+                        backgroundColor: TC.card(context),
+                        valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      ),
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_currentIndex + 1} / ${questions.length}  ·  $answeredSoFar answered',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ]),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.grid_view_rounded, color: AppColors.textDark),
+                onPressed: _showNavigator,
+              ),
+            ]),
+          ),
+
+          // ── Timer bar ─────────────────────────────────────────────────────
+          if (_hasTimer)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildTimerBar(),
+            ),
+          if (_hasTimer) const SizedBox(height: 8),
+
+          // ── Question body ─────────────────────────────────────────────────
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const SizedBox(height: 8),
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _typeColor(currentQuestion.type)
+                          .withValues(alpha: TC.isDark(context) ? 0.2 : 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(_typeLabel(currentQuestion.type),
+                        style: TextStyle(
+                            color: _typeColor(currentQuestion.type),
+                            fontSize: 12, fontWeight: FontWeight.w600)),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${_currentIndex + 1} / ${questions.length}  ·  $answeredSoFar answered',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(
+                          alpha: TC.isDark(context) ? 0.2 : 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                        '${currentQuestion.points} '
+                            'pt${currentQuestion.points == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 12, fontWeight: FontWeight.w600)),
                   ),
                 ]),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.grid_view_rounded, color: AppColors.textDark),
-              onPressed: _showNavigator,
-            ),
-          ]),
-        ),
-
-        // ── Timer bar ─────────────────────────────────────────────────────
-        if (_hasTimer)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _buildTimerBar(),
-          ),
-        if (_hasTimer) const SizedBox(height: 8),
-
-        // ── Question body ─────────────────────────────────────────────────
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const SizedBox(height: 8),
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _typeColor(currentQuestion.type)
-                        .withValues(alpha: TC.isDark(context) ? 0.2 : 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(_typeLabel(currentQuestion.type),
-                      style: TextStyle(
-                          color: _typeColor(currentQuestion.type),
-                          fontSize: 12, fontWeight: FontWeight.w600)),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(
-                        alpha: TC.isDark(context) ? 0.2 : 0.08),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                      '${currentQuestion.points} '
-                          'pt${currentQuestion.points == 1 ? '' : 's'}',
-                      style: const TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 12, fontWeight: FontWeight.w600)),
-                ),
+                const SizedBox(height: 14),
+                Text(currentQuestion.text,
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold,
+                        color: TC.text(context), height: 1.4)),
+                const SizedBox(height: 24),
+                _buildAnswerWidget(),
+                const SizedBox(height: 24),
               ]),
-              const SizedBox(height: 14),
-              Text(currentQuestion.text,
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold,
-                      color: TC.text(context), height: 1.4)),
-              const SizedBox(height: 24),
-              _buildAnswerWidget(),
-              const SizedBox(height: 24),
+            ),
+          ),
+
+          // ── Navigation bar ────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Column(children: [
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                if (!isFirstQuestion)
+                  TextButton.icon(
+                    onPressed: () => _skipToUnanswered(false),
+                    icon: const Icon(Icons.skip_previous, size: 14),
+                    label: const Text('Prev', style: TextStyle(fontSize: 11)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                    ),
+                  )
+                else
+                  const SizedBox(),
+                if (!isLastQuestion)
+                  TextButton.icon(
+                    onPressed: () => _skipToUnanswered(true),
+                    icon: const Icon(Icons.skip_next, size: 14),
+                    label: const Text('Skip', style: TextStyle(fontSize: 11)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                    ),
+                  )
+                else
+                  const SizedBox(),
+              ]),
+              const SizedBox(height: 4),
+              Row(children: [
+                _NavButton(
+                    icon: Icons.arrow_back_ios,
+                    enabled: !isFirstQuestion,
+                    onTap: _goPrev),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: isLastQuestion
+                      ? ElevatedButton(
+                    onPressed: _submitting ? null : _submitQuiz,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.confirm,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: _submitting
+                        ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                        : const Text('Submit Quiz',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
+                  )
+                      : ElevatedButton(
+                    onPressed: _goNext,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text('Next',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _NavButton(
+                    icon: Icons.arrow_forward_ios,
+                    enabled: !isLastQuestion,
+                    onTap: _goNext),
+              ]),
             ]),
           ),
-        ),
-
-        // ── Navigation bar ────────────────────────────────────────────────
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: Column(children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              if (!isFirstQuestion)
-                TextButton.icon(
-                  onPressed: () => _skipToUnanswered(false),
-                  icon: const Icon(Icons.skip_previous, size: 14),
-                  label: const Text('Prev', style: TextStyle(fontSize: 11)),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.grey,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero,
-                  ),
-                )
-              else
-                const SizedBox(),
-              if (!isLastQuestion)
-                TextButton.icon(
-                  onPressed: () => _skipToUnanswered(true),
-                  icon: const Icon(Icons.skip_next, size: 14),
-                  label: const Text('Skip', style: TextStyle(fontSize: 11)),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.grey,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero,
-                  ),
-                )
-              else
-                const SizedBox(),
-            ]),
-            const SizedBox(height: 4),
-            Row(children: [
-              _NavButton(
-                  icon: Icons.arrow_back_ios,
-                  enabled: !isFirstQuestion,
-                  onTap: _goPrev),
-              const SizedBox(width: 12),
-              Expanded(
-                child: isLastQuestion
-                    ? ElevatedButton(
-                  onPressed: _submitting ? null : _submitQuiz,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.confirm,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: _submitting
-                      ? const SizedBox(
-                      width: 20, height: 20,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2))
-                      : const Text('Submit Quiz',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16)),
-                )
-                    : ElevatedButton(
-                  onPressed: _goNext,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: const Text('Next',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              _NavButton(
-                  icon: Icons.arrow_forward_ios,
-                  enabled: !isLastQuestion,
-                  onTap: _goNext),
-            ]),
-          ]),
-        ),
-      ])),
-    );
+        ])),
+      ), // Scaffold
+    ); // PopScope
   }
 
   // ── Timer bar ─────────────────────────────────────────────────────────────

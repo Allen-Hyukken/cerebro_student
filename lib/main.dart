@@ -17,6 +17,7 @@ void main() async {
   // ThemeNotifier.build() and AuthNotifier.build() read correct initial values.
   await ApiService.baseUrl;
   await ThemeService().init();
+  await SoundService().init();          // ← moved here, before ProviderScope
   final loggedIn = await ApiService.restoreSession();
 
   FlutterNativeSplash.remove();
@@ -43,7 +44,7 @@ class _QuizAppState extends ConsumerState<QuizApp> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await SoundService().init();
+      // init() already ran in main() — just start playing
       await SoundService().playBackground();
     });
   }
