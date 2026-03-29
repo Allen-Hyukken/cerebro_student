@@ -418,7 +418,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                           fontWeight: FontWeight.bold,
                                           color: TC.text(context))),
                                   content: Text(
-                                      'A quiz app for students.\nVersion 1.0.0',
+                                      'A quiz app for students.\nVersion 3.2.31',
                                       style: TextStyle(color: TC.subText(context))),
                                   actions: [
                                     TextButton(

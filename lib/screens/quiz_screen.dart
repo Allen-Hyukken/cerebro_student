@@ -1140,10 +1140,10 @@ class _NavButton extends StatelessWidget {
         shape: BoxShape.circle,
         color: enabled
             ? AppColors.primary.withValues(alpha: 0.12)
-            : Colors.grey.shade100,
+            : TC.card(context),
       ),
       child: Icon(icon, size: 18,
-          color: enabled ? AppColors.primary : Colors.grey.shade300),
+          color: enabled ? AppColors.primary : TC.subText(context)),
     ),
   );
 }
