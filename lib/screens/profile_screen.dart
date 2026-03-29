@@ -318,7 +318,7 @@ class ProfileScreen extends ConsumerWidget {
                             fontWeight: FontWeight.w500,
                           ),
                         )),
-                        Text('1.0.0',
+                        Text('3.2.31',
                             style: TextStyle(
                               fontSize: 14, color: TC.subText(context),
                             )),
